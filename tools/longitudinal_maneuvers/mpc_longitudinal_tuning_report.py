@@ -18,9 +18,11 @@ D_REL = 6
 axis_labels = ['Time (s)',
                'Ego position (m)',
                'Lead absolute position (m)',
+               'Lead absolute position (m)',
                'Ego Velocity (m/s)',
                'Lead Velocity (m/s)',
                'Ego acceleration (m/s^2)',
+               'Lead distance (m)'
                'Lead distance (m)'
                ]
 
