@@ -9,8 +9,10 @@ from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
 TIME = 0
 LEAD_DISTANCE= 2
+LEAD_DISTANCE= 2
 EGO_V = 3
 EGO_A = 5
+D_REL = 6
 D_REL = 6
 
 axis_labels = ['Time (s)',
