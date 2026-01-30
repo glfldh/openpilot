@@ -169,7 +169,6 @@ def check_fcw(v_ego, lead_xv, t_follow, v_cruise, dt):
 class LongitudinalPlanner:
   def __init__(self, CP, init_v=0.0, dt=DT_MDL):
     self.CP = CP
-    self.mpc = LongitudinalMpc(dt=dt)
     self.source = LongitudinalPlanSource.cruise
     self.fcw = False
     self.dt = dt
@@ -274,11 +273,6 @@ class LongitudinalPlanner:
     self.output_should_stop = any(should_stop for _, should_stop in out_accels.values())
 
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
-
-    # Interpolate 0.05 seconds and save as starting point for next iteration
-    a_prev = self.a_desired
-    self.a_desired = float(np.interp(self.dt, CONTROL_N_T_IDX, self.a_desired_trajectory))
-    self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.a_desired + a_prev) / 2.0
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
