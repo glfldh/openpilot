@@ -145,7 +145,7 @@ class LongitudinalPlanner:
     cruise_accel = smooth_value(cruise_accel, self.output_a_target, TAU_CRUISE)
     out_accels[LongitudinalPlanSource.cruise] = (cruise_accel, False)
 
-    source, (output_a_target, _) = min(out_accels.items(), key=lambda x: x[1][0])
+    source, (output_a_target, _) = min(out_accels.items(), key=lambda kv: kv[1][0])
     self.source = source
     self.output_should_stop = any(should_stop for _, should_stop in out_accels.values())
 
