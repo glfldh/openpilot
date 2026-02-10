@@ -44,13 +44,10 @@ class WifiIcon(Widget):
     self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock.png", 22, 32)
 
     self._network: Network | None = None
-    self._scale = 1.0
+    self._scale = 0.7  # TODO: remove this
 
   def set_current_network(self, network: Network):
     self._network = network
-
-  def set_scale(self, scale: float):
-    self._scale = scale
 
   @staticmethod
   def get_strength_icon_idx(strength: int) -> int:
@@ -90,6 +87,7 @@ class WifiButton(BigButton):
     self._connecting: Callable[[], str | None] | None = None
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
+    self._forget_btn = ForgetButton(lambda: None, lambda: None)  # TODO: pass in callbacks and show on click
 
   def set_current_network(self, network: Network):
     self._network = network
@@ -110,35 +108,34 @@ class WifiButton(BigButton):
     # from old network info page, can be cleaned up?
     # self._connect_btn.set_full(not self._network.is_saved and not self._is_connecting)
     if self._is_connecting:
-      self._connect_btn.set_label("connecting...")
-      self._connect_btn.set_enabled(False)
+      self.set_value("connecting...")
+      self.set_enabled(False)
     elif self._network.is_connected:
-      self._connect_btn.set_label("connected")
-      self._connect_btn.set_enabled(False)
+      self.set_value("connected")
+      self.set_enabled(False)
     elif self._network.security_type == SecurityType.UNSUPPORTED:
-      self._connect_btn.set_label("connect")
-      self._connect_btn.set_enabled(False)
+      self.set_value("connect")
+      self.set_enabled(False)
     else:  # saved or unknown
-      self._connect_btn.set_label("connect")
-      self._connect_btn.set_enabled(True)
+      self.set_value("connect")
+      self.set_enabled(True)
 
-    self._title.set_text(normalize_ssid(self._network.ssid))
-    if self._network.security_type == SecurityType.OPEN:
-      self._subtitle.set_text("open")
-    elif self._network.security_type == SecurityType.UNSUPPORTED:
-      self._subtitle.set_text("unsupported")
-    else:
-      self._subtitle.set_text("secured")
+    # self._title.set_text(normalize_ssid(self._network.ssid))
+    # if self._network.security_type == SecurityType.OPEN:
+    #   self._subtitle.set_text("open")
+    # elif self._network.security_type == SecurityType.UNSUPPORTED:
+    #   self._subtitle.set_text("unsupported")
+    # else:
+    #   self._subtitle.set_text("secured")
 
   def _render(self, _):
     super()._render(_)
 
-    self._wifi_icon.set_scale(0.7)
     wifi_icon_rect = rl.Rectangle(
       self._rect.x + 20,
       self._rect.y,
-      self._wifi_icon.rect.width * 0.7,
-      self._rect.height
+      self._wifi_icon.rect.width,
+      self._wifi_icon.rect.height,
     )
     self._wifi_icon.render(wifi_icon_rect)
     rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
@@ -417,6 +414,7 @@ class WifiUIMici(NavWidget):
   def show_event(self):
     # Call super to prepare scroller; selection scroll is handled dynamically
     super().show_event()
+    self._scroller.show_event()
     self._wifi_manager.set_active(True)
     self._last_interaction_time = -float('inf')
 
