@@ -181,6 +181,7 @@ class DriverStateRenderer(Widget):
     if len(driver_orient) != 3:
       return
 
+    # Calibrate orientation so looking straight ahead (instead of at device) is (0, 0, 0)
     sm = ui_state.sm
     if sm.valid['liveCalibration'] and len(sm['liveCalibration'].rpyCalib) == 3:
       cal_rpy = sm['liveCalibration'].rpyCalib
@@ -191,9 +192,8 @@ class DriverStateRenderer(Widget):
     # TODO: do we need to invert if RHD?
     yaw = -yaw  # function inverts yaw
 
-
     pitch = self._pitch_filter.update(pitch)
-    yaw = self._yaw_filter.update(yaw)
+    yaw = self._yaw_filter.update(-yaw)
 
     # hysteresis on looking center
     if abs(pitch) < LOOKING_CENTER_THRESHOLD_LOWER and abs(yaw) < LOOKING_CENTER_THRESHOLD_LOWER:
