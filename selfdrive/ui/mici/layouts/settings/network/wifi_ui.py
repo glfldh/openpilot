@@ -79,7 +79,7 @@ class WifiIcon(Widget):
 
 
 class WifiButton(BigButton):
-  def __init__(self, network: Network):
+  def __init__(self, network: Network, forget_callback: Callable[[str], None]):
     super().__init__(network.ssid, scroll=True)
 
     # State
@@ -87,7 +87,7 @@ class WifiButton(BigButton):
     self._connecting: Callable[[], str | None] | None = None
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
-    self._forget_btn = ForgetButton(lambda: None, lambda: None)  # TODO: pass in callbacks and show on click
+    self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
 
   def set_current_network(self, network: Network):
     self._network = network
@@ -139,6 +139,14 @@ class WifiButton(BigButton):
     )
     self._wifi_icon.render(wifi_icon_rect)
     rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
+
+    if self._network.is_saved or self._is_connecting:
+      self._forget_btn.render(rl.Rectangle(
+        self._rect.x + self._rect.width - self._forget_btn.rect.width,
+        self._rect.y + self._rect.height - self._forget_btn.rect.height,
+        self._forget_btn.rect.width,
+        self._forget_btn.rect.height,
+      ))
 
 
 # class WifiItem(BigDialogOptionButton):
@@ -453,7 +461,7 @@ class WifiUIMici(NavWidget):
         network_button.set_current_network(network)
       else:
         # network_button = BigButton(network.ssid, 'connected')
-        network_button = WifiButton(network)
+        network_button = WifiButton(network, self._forget_network)
         network_button.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
 
       self._scroller.add_widget(network_button)
