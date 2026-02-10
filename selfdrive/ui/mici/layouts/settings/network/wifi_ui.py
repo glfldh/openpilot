@@ -8,6 +8,7 @@ from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog, BigInputDialog, BigDialogOptionButton, BigConfirmationDialogV2
 from openpilot.system.ui.lib.application import gui_app, MousePos, FontWeight
 from openpilot.system.ui.widgets import Widget, NavWidget
+from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.lib.wifi_manager import WifiManager, Network, SecurityType
 
 
@@ -313,12 +314,17 @@ class NetworkInfoPage(NavWidget):
     return -1
 
 
-class WifiUIMici(BigMultiOptionDialog):
+class WifiUIMici(NavWidget):
   # Wait this long after user interacts with widget to update network list
   INACTIVITY_TIMEOUT = 1
 
   def __init__(self, wifi_manager: WifiManager, back_callback: Callable):
-    super().__init__([], None)
+    super().__init__()
+
+    self._scroller = Scroller([],
+                              # horizontal=False, pad_start=100, pad_end=100, spacing=0, snap_items=True
+                              snap_items=False,
+                              )
 
     # Set up back navigation
     self.set_back_callback(back_callback)
@@ -446,14 +452,16 @@ class WifiUIMici(BigMultiOptionDialog):
       self._last_interaction_time = rl.get_time()
 
   def _render(self, _):
+    self._scroller.render(self._rect)
+
     # Update Scroller layout and restore current selection whenever buttons are updated, before first render
-    current_selection = self.get_selected_option()
-    if self._restore_selection and current_selection in self._networks:
-      self._scroller._layout()
-      BigMultiOptionDialog._on_option_selected(self, current_selection)
-      self._restore_selection = None
-
-    super()._render(_)
-
-    if not self._networks:
-      self._loading_animation.render(self._rect)
+    # current_selection = self.get_selected_option()
+    # if self._restore_selection and current_selection in self._networks:
+    #   self._scroller._layout()
+    #   BigMultiOptionDialog._on_option_selected(self, current_selection)
+    #   self._restore_selection = None
+    #
+    # super()._render(_)
+    #
+    # if not self._networks:
+    #   self._loading_animation.render(self._rect)
