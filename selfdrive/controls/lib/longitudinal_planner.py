@@ -2,7 +2,6 @@
 import math
 import numpy as np
 
-from enum import Enum
 from cereal import log
 import cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
@@ -11,12 +10,13 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, smooth_value
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+
+LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
 
 CRUISE_MIN_ACCEL = -1.2
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -42,13 +42,6 @@ T_IDXS = np.array(ModelConstants.T_IDXS)
 FCW_IDXS = T_IDXS < 5.0
 T_IDXS_LEAD = T_IDXS[FCW_IDXS]
 T_DIFFS_LEAD = np.diff(T_IDXS_LEAD, prepend=[0.])
-
-
-class Source(Enum):
-  LEAD0 = 0
-  LEAD1 = 1
-  CRUISE = 2
-  E2E = 3
 
 
 def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
@@ -228,13 +221,13 @@ class LongitudinalPlanner:
     out_accels[LongitudinalPlanSource.cruise] = (cruise_accel, False)
 
     lead_0, lead_1 = sm['radarState'].leadOne, sm['radarState'].leadTwo
-    lead_info = {Source.LEAD0: lead_0, Source.LEAD1: lead_1}
+    lead_info = {LongitudinalPlanSource.lead0: lead_0, LongitudinalPlanSource.lead1: lead_1}
     for key in lead_info.keys():
       lead_xv = process_lead(lead_info[key])
       if lead_xv is None:
         continue
       v_traj, a_traj, collision = simulate_trajectory(v_ego, lead_xv, v_cruise, t_follow, accel_clip)
-      if key == Source.LEAD0:
+      if key == LongitudinalPlanSource.lead0:
         if lead_info[key].fcw and collision:
           self.crash_cnt += 1
         else:
@@ -264,7 +257,7 @@ class LongitudinalPlanner:
     longitudinalPlan.modelMonoTime = sm.logMonoTime['modelV2']
 
     longitudinalPlan.hasLead = sm['radarState'].leadOne.status
-    longitudinalPlan.longitudinalPlanSource = self.source.name
+    longitudinalPlan.longitudinalPlanSource = self.source
     longitudinalPlan.fcw = self.fcw
 
     longitudinalPlan.aTarget = float(self.output_a_target)
