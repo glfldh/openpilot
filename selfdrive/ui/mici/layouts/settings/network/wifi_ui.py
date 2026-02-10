@@ -89,6 +89,10 @@ class WifiButton(BigButton):
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
 
+  def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
+    super().set_touch_valid_callback(touch_callback)
+    self._forget_btn.set_touch_valid_callback(touch_callback)
+
   def set_current_network(self, network: Network):
     self._network = network
     self._wifi_icon.set_current_network(network)
