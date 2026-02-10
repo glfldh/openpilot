@@ -43,7 +43,6 @@ FCW_IDXS = T_IDXS < 5.0
 T_IDXS_LEAD = T_IDXS[FCW_IDXS]
 T_DIFFS_LEAD = np.diff(T_IDXS_LEAD, prepend=[0.])
 
-
 def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.75
@@ -102,20 +101,19 @@ def parse_model(model_msg):
     throttle_prob = 1.0
   return throttle_prob
 
+# TODO should we assume larger deceleration for ego to break harsher
+def get_desired_lead_distance(v_ego, v_lead, t_follow):
+  return (v_ego**2 - v_lead**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
+
 # TODO maybe use predicted values at delay instead
-def lead_controller(v_ego, v_lead, gap_0, v_cruise, t_follow, accel_clip):
-  dv = v_lead - v_ego
-  closing_speed = max(0.0, -dv)
-  # TODO might need to be just COMFORT_BRAKE if it follows lead to closely
-  dynamic_term = (v_ego * closing_speed) / (2.0 * np.sqrt(accel_clip[1] * COMFORT_BRAKE))
-  desired_gap = STOP_DISTANCE + v_ego * t_follow + dynamic_term
+def lead_controller(v_ego, v_lead, actual_distance, t_follow):
+  desired_distance = get_desired_lead_distance(v_ego, v_lead, t_follow)
+  e_d = actual_distance - desired_distance
+  e_v = v_lead - v_ego
+  accel = 0.2 * e_d + 1.0 * e_v
+  return accel
 
-  velocity_term = (v_ego / max(v_cruise, 0.1)) ** 4
-  gap_term = (desired_gap / gap_0) ** 2
-
-  return accel_clip[1] * (1.0 - velocity_term - gap_term)
-
-def simulate_trajectory(v_ego, lead_xv, v_cruise, t_follow, accel_clip):
+def simulate_trajectory(v_ego, lead_xv, t_follow):
   a_traj = []
   v_traj = []
   x_ego = 0.0
@@ -123,12 +121,12 @@ def simulate_trajectory(v_ego, lead_xv, v_cruise, t_follow, accel_clip):
   
   for idx, dt in enumerate(T_DIFFS_LEAD):
     x_lead, v_lead = lead_xv[idx]
-    gap = x_lead - x_ego
+    actual_distance = x_lead - x_ego
     
-    if gap < CRASH_DISTANCE:
+    if actual_distance < CRASH_DISTANCE:
       collision = True
     
-    a_target = lead_controller(v_ego, v_lead, gap, v_cruise, t_follow, accel_clip)
+    a_target = lead_controller(v_ego, v_lead, actual_distance, t_follow)
     
     a_traj.append(a_target)
     v_traj.append(v_ego)
@@ -226,7 +224,7 @@ class LongitudinalPlanner:
       lead_xv = process_lead(lead_info[key])
       if lead_xv is None:
         continue
-      v_traj, a_traj, collision = simulate_trajectory(v_ego, lead_xv, v_cruise, t_follow, accel_clip)
+      v_traj, a_traj, collision = simulate_trajectory(v_ego, lead_xv, t_follow)
       if key == LongitudinalPlanSource.lead0:
         if lead_info[key].fcw and collision:
           self.crash_cnt += 1
