@@ -6,6 +6,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.monitoring.helpers import face_orientation_from_net
 
 AlertSize = log.SelfdriveState.AlertSize
 
@@ -175,11 +176,22 @@ class DriverStateRenderer(Widget):
     # Get monitoring state
     driver_data = self.get_driver_data()
     driver_orient = driver_data.faceOrientation
+    driver_position = driver_data.facePosition
 
     if len(driver_orient) != 3:
       return
 
-    pitch, yaw, roll = driver_orient
+    sm = ui_state.sm
+    if sm.valid['liveCalibration'] and len(sm['liveCalibration'].rpyCalib) == 3:
+      cal_rpy = sm['liveCalibration'].rpyCalib
+    else:
+      cal_rpy = [0.0, 0.0, 0.0]
+
+    roll, pitch, yaw = face_orientation_from_net(driver_orient, driver_position, cal_rpy)
+    # TODO: do we need to invert if RHD?
+    yaw = -yaw  # function inverts yaw
+
+
     pitch = self._pitch_filter.update(pitch)
     yaw = self._yaw_filter.update(yaw)
 
