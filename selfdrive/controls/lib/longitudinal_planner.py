@@ -6,15 +6,12 @@ from cereal import log
 import cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
-from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
-from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, smooth_value
+from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
 
 LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
 
@@ -26,8 +23,11 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 ACCEL_CLIP_JERK_MAX = 1.0
 
 K_CRUISE = 0.27
-TAU_CRUISE = 1.0
-TAU_LEAD = 0.05
+TAU_CRUISE_SMOOTH = 1.0
+
+K_P_LEAD = 3.0
+K_D_LEAD = 5.0
+TAU_LEAD_SMOOTH = 0.3
 
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
@@ -69,15 +69,10 @@ def extrapolate_state(x, v, a, a_tau):
 def process_lead(lead):
   if lead is None or not lead.status:
     return None
-
-  x_lead = lead.dRel
-  v_lead = lead.vLead
-  a_lead = lead.aLeadK
+  x_lead = np.clip(lead.dRel, 0.01, 1e8)
+  v_lead = np.clip(lead.vLead, 0.0, 1e8)
+  a_lead = np.clip(lead.aLeadK, -10., 5.)
   a_lead_tau = lead.aLeadTau
-
-  x_lead = np.clip(x_lead, 0.01, 1e8)
-  v_lead = np.clip(v_lead, 0.0, 1e8)
-  a_lead = np.clip(a_lead, -10., 5.)
   lead_xv = extrapolate_state(x_lead, v_lead, a_lead, a_lead_tau)
   return lead_xv
 
@@ -102,44 +97,33 @@ def parse_model(model_msg):
   return throttle_prob
 
 # TODO should we assume larger deceleration for ego to break harsher
-def get_desired_lead_distance(v_ego, v_lead, t_follow):
+def get_follow_distance(v_ego, v_lead, t_follow):
   return (v_ego**2 - v_lead**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
 
-# TODO maybe use predicted values at delay instead
-def lead_controller(v_ego, v_lead, actual_distance, t_follow):
-  desired_distance = get_desired_lead_distance(v_ego, v_lead, t_follow)
-  e_d = actual_distance - desired_distance
-  e_v = v_lead - v_ego
-  accel = 0.2 * e_d + 1.0 * e_v
-  return accel
+def lead_controller(v_ego, v_lead, actual_distance, accel_clip, output_a_target, t_follow):
+  desired_distance = get_follow_distance(v_ego, v_lead, t_follow)
+  e_d = (actual_distance - desired_distance) / (v_ego + 10.0)
+  e_v = (v_lead - v_ego) / (v_ego + 10.0)
+  lead_accel = K_P_LEAD * e_d + K_D_LEAD * e_v
+  lead_accel = np.clip(lead_accel, accel_clip[0], accel_clip[1])
+  lead_accel = smooth_value(lead_accel, output_a_target, TAU_LEAD_SMOOTH)
+  return lead_accel
 
-def simulate_trajectory(v_ego, lead_xv, t_follow):
-  a_traj = []
-  v_traj = []
+def check_collision(v_ego, lead_xv, output_a_target, accel_clip, t_follow):
   x_ego = 0.0
-  collision = False
-  
   for idx, dt in enumerate(T_DIFFS_LEAD):
     x_lead, v_lead = lead_xv[idx]
     actual_distance = x_lead - x_ego
-    
     if actual_distance < CRASH_DISTANCE:
-      collision = True
-    
-    a_target = lead_controller(v_ego, v_lead, actual_distance, t_follow)
-    
-    a_traj.append(a_target)
-    v_traj.append(v_ego)
-    
-    v_ego += a_target * dt
-    v_ego = max(0.0, v_ego)
+      return True
+    a = lead_controller(v_ego, v_lead, actual_distance, accel_clip, output_a_target, t_follow)
+    output_a_target = a
+    v_ego = max(0.0, v_ego + a * dt)
     x_ego += v_ego * dt
-  
-  return np.array(v_traj), np.array(a_traj), collision
-
+  return False
 
 class LongitudinalPlanner:
-  def __init__(self, CP, init_v=0.0, dt=DT_MDL):
+  def __init__(self, CP, dt=DT_MDL):
     self.CP = CP
     self.source = LongitudinalPlanSource.cruise
     self.crash_cnt = 0
@@ -147,7 +131,6 @@ class LongitudinalPlanner:
     self.dt = dt
     self.allow_throttle = True
 
-    self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
     self.output_should_stop = False
@@ -177,13 +160,11 @@ class LongitudinalPlanner:
     accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
 
     if reset_state:
-      self.v_desired_filter.x = v_ego
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
       self.a_desired = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
       self.prev_accel_clip = accel_clip
 
     # Prevent divergence, smooth in current v_ego
-    self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     throttle_prob = parse_model(sm['modelV2'])
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
@@ -196,26 +177,16 @@ class LongitudinalPlanner:
     if force_slow_decel:
       v_cruise = 0.0
 
-    # TODO counter is only needed because radar is glitchy, remove once radar is gone
-    self.fcw = self.mpc.crash_cnt > 2 and not sm['carState'].standstill
-    if self.fcw:
-      cloudlog.info("FCW triggered")
-
     accel_clip[1] = np.clip(accel_clip[1], self.prev_accel_clip[1] - self.dt*ACCEL_CLIP_JERK_MAX, self.prev_accel_clip[1] + self.dt*ACCEL_CLIP_JERK_MAX)
     self.prev_accel_clip = accel_clip
 
     out_accels = {}
-    action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-    lead_accel, should_stop_lead = get_accel_from_plan(
-      self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX, action_t, self.CP.vEgoStopping)
-    lead_accel = smooth_value(lead_accel, self.output_a_target, TAU_LEAD)
-    out_accels[self.mpc.lead_source] = (lead_accel, should_stop_lead)
     if sm['selfdriveState'].experimentalMode:
       out_accels[LongitudinalPlanSource.e2e] = (sm['modelV2'].action.desiredAcceleration, sm['modelV2'].action.shouldStop)
 
     cruise_accel = K_CRUISE * (v_cruise - v_ego)
     cruise_accel = np.clip(cruise_accel, CRUISE_MIN_ACCEL, accel_clip[1])
-    cruise_accel = smooth_value(cruise_accel, self.output_a_target, TAU_CRUISE)
+    cruise_accel = smooth_value(cruise_accel, self.output_a_target, TAU_CRUISE_SMOOTH)
     out_accels[LongitudinalPlanSource.cruise] = (cruise_accel, False)
 
     lead_0, lead_1 = sm['radarState'].leadOne, sm['radarState'].leadTwo
@@ -224,15 +195,20 @@ class LongitudinalPlanner:
       lead_xv = process_lead(lead_info[key])
       if lead_xv is None:
         continue
-      v_traj, a_traj, collision = simulate_trajectory(v_ego, lead_xv, t_follow)
+
+      actual_distance, v_lead = lead_xv[0]
+      lead_accel = lead_controller(v_ego, v_lead, actual_distance, accel_clip, self.output_a_target, t_follow)
+
+      v_lead_1sec = np.interp(1.0, T_IDXS_LEAD, lead_xv[:, 1])
+      should_stop_lead = (v_lead < 0.5 and v_lead_1sec < 0.5 and actual_distance < get_follow_distance(v_ego, 0.0, t_follow))
+      out_accels[key] = (lead_accel, should_stop_lead)
+
       if key == LongitudinalPlanSource.lead0:
-        if lead_info[key].fcw and collision:
+        if lead_info[key].fcw and check_collision(v_ego, lead_xv, self.output_a_target, accel_clip, t_follow):
           self.crash_cnt += 1
         else:
           self.crash_cnt = 0
 
-      action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-      out_accels[key] = get_accel_from_plan(v_traj, a_traj, T_IDXS_LEAD, action_t, self.CP.vEgoStopping)
     if not lead_0.status:
       self.crash_cnt = 0
 
