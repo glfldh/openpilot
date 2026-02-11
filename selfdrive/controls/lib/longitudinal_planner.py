@@ -21,6 +21,7 @@ A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+ACCEL_CLIP_JERK_MAX = 1.0
 
 K_CRUISE = 0.27
 TAU_CRUISE = 0.7
@@ -60,6 +61,7 @@ class LongitudinalPlanner:
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
+    self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
     self.output_should_stop = False
 
@@ -105,6 +107,7 @@ class LongitudinalPlanner:
       self.v_desired_filter.x = v_ego
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
       self.a_desired = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
+      self.prev_accel_clip = accel_clip
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
@@ -132,6 +135,9 @@ class LongitudinalPlanner:
     self.fcw = self.mpc.crash_cnt > 2 and not sm['carState'].standstill
     if self.fcw:
       cloudlog.info("FCW triggered")
+
+      accel_clip[1] = np.clip(accel_clip[1], self.prev_accel_clip[1] - self.dt*ACCEL_CLIP_JERK_MAX, self.prev_accel_clip[1] + self.dt*ACCEL_CLIP_JERK_MAX)
+      self.prev_accel_clip = accel_clip
 
     out_accels = {}
     action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
