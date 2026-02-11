@@ -186,10 +186,9 @@ class BigButton(Widget):
     self._label.render(label_rect)
 
     if self.value:
-      sub_label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self._width_hint())
-      sub_label_rect = rl.Rectangle(sub_label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
+      sub_label_rect = rl.Rectangle(label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
       self._sub_label.render(sub_label_rect)
 
   def _render(self, _):
