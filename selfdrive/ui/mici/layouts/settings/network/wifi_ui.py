@@ -512,6 +512,12 @@ class WifiUIMici(NavWidget):
                                                                                                                   or self._networks[btn.network.ssid].is_saved))
       self._scroller._items.insert(divider_idx, self._saved_divider)
 
+    # TEST: 50% chance to pop last item
+    import random
+    if len(self._scroller._items) > 1 and random.random() < 0.5:
+      print('POPPING LAST')
+      self._scroller._items.pop()
+
     # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
     self._restore_selection = True
 
