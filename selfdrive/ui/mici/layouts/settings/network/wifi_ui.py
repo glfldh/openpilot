@@ -133,6 +133,25 @@ class WifiButton(BigButton):
       sub_label_rect = rl.Rectangle(sub_label_x, label_y - sub_label_height, self.LABEL_WIDTH, sub_label_height)
       self._sub_label.render(sub_label_rect)
 
+    # Wifi icon
+    wifi_icon_rect = rl.Rectangle(
+      self._rect.x,
+      btn_y + 23,
+      self._wifi_icon.rect.width,
+      self._wifi_icon.rect.height,
+    )
+    self._wifi_icon.render(wifi_icon_rect)
+    rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
+
+    # Forget button
+    if self._network.is_saved or self._is_connecting:
+      self._forget_btn.render(rl.Rectangle(
+        self._rect.x + self._rect.width - self._forget_btn.rect.width - 12,
+        btn_y + self._rect.height - self._forget_btn.rect.height - 12,
+        self._forget_btn.rect.width,
+        self._forget_btn.rect.height,
+      ))
+
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
     super().set_touch_valid_callback(touch_callback)
     self._forget_btn.set_touch_valid_callback(touch_callback)
@@ -170,26 +189,6 @@ class WifiButton(BigButton):
       self.set_enabled(True)
       self._sub_label.set_color(rl.Color(255, 255, 255, int(255 * 0.9)))
       self._sub_label.set_font_weight(FontWeight.SEMI_BOLD)
-
-  def _render(self, _):
-    super()._render(_)
-
-    wifi_icon_rect = rl.Rectangle(
-      self._rect.x,
-      self._rect.y + 23,
-      self._wifi_icon.rect.width,
-      self._wifi_icon.rect.height,
-    )
-    self._wifi_icon.render(wifi_icon_rect)
-    rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
-
-    if self._network.is_saved or self._is_connecting:
-      self._forget_btn.render(rl.Rectangle(
-        self._rect.x + self._rect.width - self._forget_btn.rect.width,
-        self._rect.y + self._rect.height - self._forget_btn.rect.height,
-        self._forget_btn.rect.width,
-        self._forget_btn.rect.height,
-      ))
 
 
 # class WifiItem(BigDialogOptionButton):
