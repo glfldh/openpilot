@@ -193,7 +193,7 @@ class DriverStateRenderer(Widget):
     yaw = -yaw  # function inverts yaw
 
     pitch = self._pitch_filter.update(pitch)
-    yaw = self._yaw_filter.update(-yaw)
+    yaw = self._yaw_filter.update(yaw)
 
     # hysteresis on looking center
     if abs(pitch) < LOOKING_CENTER_THRESHOLD_LOWER and abs(yaw) < LOOKING_CENTER_THRESHOLD_LOWER:
