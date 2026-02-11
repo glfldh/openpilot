@@ -81,6 +81,7 @@ class WifiIcon(Widget):
 class WifiButton(BigButton):
   def __init__(self, network: Network, forget_callback: Callable[[str], None]):
     super().__init__(network.ssid, scroll=True)
+    self._label_horizontal_padding = 98
 
     # State
     self._network = network
@@ -88,6 +89,12 @@ class WifiButton(BigButton):
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
+
+  def _get_label_font_size(self):
+    return 48
+
+  def _width_hint(self) -> int:
+    return int(self._rect.width - self._label_horizontal_padding - 28)
 
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
     super().set_touch_valid_callback(touch_callback)

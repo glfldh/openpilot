@@ -112,6 +112,7 @@ class BigButton(Widget):
     self.value = value
     self._icon_size = icon_size
     self._scroll = scroll
+    self._label_horizontal_padding = LABEL_HORIZONTAL_PADDING
     self.set_icon(icon)
 
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
@@ -146,7 +147,7 @@ class BigButton(Widget):
   def _width_hint(self) -> int:
     # Single line if scrolling, so hide behind icon if exists
     icon_size = self._icon_size[0] if self._txt_icon and self._scroll and self.value else 0
-    return int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2 - icon_size)
+    return int(self._rect.width - self._label_horizontal_padding * 2 - icon_size)
 
   def _get_label_font_size(self):
     if len(self.text) < 12:
@@ -189,7 +190,7 @@ class BigButton(Widget):
     rl.draw_texture_ex(txt_bg, (btn_x, btn_y), 0, scale, rl.WHITE)
 
     # LABEL ------------------------------------------------------------------
-    lx = self._rect.x + LABEL_HORIZONTAL_PADDING
+    lx = self._rect.x + self._label_horizontal_padding
     ly = btn_y + self._rect.height - 33  # - 40# - self._get_label_font_size() / 2
 
     if self.value:
