@@ -36,7 +36,7 @@ class LoadingAnimation(Widget):
     cx = int(self._rect.x + self._rect.width / 2)
     cy = int(self._rect.y + self._rect.height / 2)
 
-    y_mag = 10
+    y_mag = 7
     anim_scale = 5
     spacing = 14
 
@@ -618,13 +618,13 @@ class WifiUIMici(NavWidget):
   def _render(self, _):
     self._scroller.render(self._rect)
 
-    anim_x = self._rect.x
-    anim_y = self._rect.y + self._rect.height - 25
+    anim_x = self._rect.x + self._rect.width - 90
+    anim_y = self._rect.y + 5
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
 
-    status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
-    self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
-    self._status_label.render(rl.Rectangle(anim_x + 90, anim_y, 200, 20))
+    # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
+    # self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
+    # self._status_label.render(rl.Rectangle(anim_x + 90, anim_y, 200, 20))
 
     # Update Scroller layout and restore current selection whenever buttons are updated, before first render
     # current_selection = self.get_selected_option()
