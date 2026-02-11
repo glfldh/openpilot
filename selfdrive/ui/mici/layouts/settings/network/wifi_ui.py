@@ -155,7 +155,7 @@ class WifiButton(BigButton):
       self._wifi_icon.rect.height,
     )
     self._wifi_icon.render(wifi_icon_rect)
-    rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
+    # rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
 
     # Forget button
     if self._network.is_saved or self._is_connecting:
