@@ -3,10 +3,12 @@ import os
 from pathlib import Path
 from openpilot.system.hardware import TICI
 os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
-os.environ['AMD_IFACE'] = 'USB'
-USBGPU = int(os.environ.get("USBGPU", "0"))
 
-VISION_DEV = 'NPY'
+USBGPU = "USBGPU" in os.environ
+if USBGPU:
+  os.environ['DEV'] = 'AMD'
+  os.environ['AMD_IFACE'] = 'USB'
+
 from tinygrad.tensor import Tensor
 from tinygrad.dtype import dtypes
 import time
@@ -36,7 +38,7 @@ PROCESS_NAME = "selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_vision_tinygrad.pkl'
-POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl'
+POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_policy_tinygrad.pkl'
 
 VISION_METADATA_PATH = Path(__file__).parent / 'models/driving_vision_metadata.pkl'
 POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.pkl'
@@ -192,7 +194,6 @@ class ModelState:
 
     imgs_cl = {name: self.frames[name].prepare(bufs[name], transforms[name].flatten()) for name in self.vision_input_names}
 
-
     t0 = time.perf_counter()
     if TICI and not USBGPU:
       # The imgs tensors are backed by opencl memory, only need init once
@@ -202,29 +203,28 @@ class ModelState:
     else:
       for key in imgs_cl:
         frame_input = self.frames[key].buffer_from_cl(imgs_cl[key]).reshape(self.vision_input_shapes[key])
-        self.vision_inputs[key] = Tensor(frame_input, dtype=dtypes.uint8, device=VISION_DEV).realize()
+        self.vision_inputs[key] = Tensor(frame_input, dtype=dtypes.uint8).realize()
 
     t1 = time.perf_counter()
     if prepare_only:
       return None
-    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
-    t2 = time.perf_counter()
 
+    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
-    
+
     self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
     for k in ['desire_pulse', 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
 
-    self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().astype(np.float32)
+    self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
 
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
-    t3 = time.perf_counter()
-    # print(f'Model timings: prepare {1000*(t1 - t0):.2f} ms, vision run {1000*(t2 - t1):.2f} ms, policy run {1000*(t3 - t2):.2f} ms')
+    t2 = time.perf_counter()
+    # print(f'Model timings: prepare {1000*(t1 - t0):.2f} ms, model run {1000*(t2 - t1):.2f} ms')
 
     return combined_outputs_dict
 
