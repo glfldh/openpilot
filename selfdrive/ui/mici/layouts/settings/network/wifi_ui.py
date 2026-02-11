@@ -633,7 +633,7 @@ class WifiUIMici(NavWidget):
     anim_x = self._rect.x
     anim_y = self._rect.y + self._rect.height - 25 + 2
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
-    print('loading')
+    # print('loading')
 
     # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
     # self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
