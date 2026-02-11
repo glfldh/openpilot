@@ -9,10 +9,8 @@ from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
 TIME = 0
 LEAD_DISTANCE= 2
-LEAD_DISTANCE= 2
 EGO_V = 3
 EGO_A = 5
-D_REL = 6
 D_REL = 6
 
 axis_labels = ['Time (s)',
@@ -24,13 +22,10 @@ axis_labels = ['Time (s)',
                'Lead distance (m)'
                ]
 
-linestyles = ['-', '--',]
-
 def get_html_from_results(results, labels, AXIS):
   fig, ax = plt.subplots(figsize=(16, 8))
   for idx, speed in enumerate(list(results.keys())):
-    linestyle = linestyles[idx % len(linestyles)]
-    ax.plot(results[speed][:, TIME], results[speed][:, AXIS], label=labels[idx], linestyle=linestyle)
+    ax.plot(results[speed][:, TIME], results[speed][:, AXIS], label=labels[idx])
 
   ax.set_xlabel('Time (s)')
   ax.set_ylabel(axis_labels[AXIS])
