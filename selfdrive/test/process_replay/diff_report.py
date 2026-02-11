@@ -5,8 +5,6 @@ from opendbc.car.tests.car_diff import format_diff, format_numeric_diffs
 from openpilot.selfdrive.test.process_replay.compare_logs import compare_logs
 from openpilot.selfdrive.test.process_replay.process_replay import PROC_REPLAY_DIR
 
-NAN_FIELDS = {'aRel', 'yvRel'}
-
 
 class MsgWrap:
   """Adapter so to_dict() includes defaults"""
@@ -34,14 +32,15 @@ def diff_process(cfg, ref_msgs, new_msgs) -> tuple | None:
       for d in compare_logs([r], [n], cfg.ignore, tolerance=cfg.tolerance):
         if d[0] == "change":
           path = ".".join(str(p) for p in d[1]) if isinstance(d[1], list) else d[1]
-          if cfg.proc_name == "card" and path.split('.')[-1] in NAN_FIELDS:
+          a, b = d[2]
+          if a != a and b != b:
             continue
           diffs.append((path, i, d[2], r.logMonoTime))
         elif d[0] in ("add", "remove"):
           path = ".".join(str(p) for p in d[1]) if isinstance(d[1], list) else d[1]
-          if cfg.proc_name == "card" and path.split('.')[-1] in NAN_FIELDS:
-            continue
           for item in d[2]:
+            if item[1] != item[1]:
+              continue
             diffs.append((f"{path}.{item[0]}", i, (d[0], item[1]), r.logMonoTime))
   return (diffs, ref, new) if diffs else None
 
