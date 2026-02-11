@@ -136,8 +136,8 @@ class LongitudinalPlanner:
     if self.fcw:
       cloudlog.info("FCW triggered")
 
-      accel_clip[1] = np.clip(accel_clip[1], self.prev_accel_clip[1] - self.dt*ACCEL_CLIP_JERK_MAX, self.prev_accel_clip[1] + self.dt*ACCEL_CLIP_JERK_MAX)
-      self.prev_accel_clip = accel_clip
+    accel_clip[1] = np.clip(accel_clip[1], self.prev_accel_clip[1] - self.dt*ACCEL_CLIP_JERK_MAX, self.prev_accel_clip[1] + self.dt*ACCEL_CLIP_JERK_MAX)
+    self.prev_accel_clip = accel_clip
 
     out_accels = {}
     action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
