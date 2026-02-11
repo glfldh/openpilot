@@ -322,8 +322,10 @@ class Tici(HardwareBase):
 
   def shutdown(self):
     if self.get_device_type() == "mici":
-      self.set_ship_mode() # turns off VPH_PWR after 13s
-    os.system("sudo poweroff")
+      self.set_ship_mode()  # starts 13s timer, then PMIC cuts VPH_PWR
+      os.system("sudo halt")  # clean shutdown without PS_HOLD release
+    else:
+      os.system("sudo poweroff")
 
   def get_thermal_config(self):
     intake, exhaust, case = None, None, None
