@@ -3,6 +3,7 @@ import numpy as np
 import pyray as rl
 from collections.abc import Callable
 
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog, BigInputDialog, BigDialogOptionButton, BigConfirmationDialogV2
@@ -18,19 +19,32 @@ def normalize_ssid(ssid: str) -> str:
 
 
 class LoadingAnimation(Widget):
-  def _render(self, _):
-    cx = int(self._rect.x + 70)
-    cy = int(self._rect.y + self._rect.height / 2 - 50)
+  def __init__(self):
+    super().__init__()
+    self._opacity_target = 0.0
+    self._opacity_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
 
-    y_mag = 20
+  def set_opacity(self, opacity: float):
+    self._opacity_target = opacity
+
+  def _render(self, _):
+    self._opacity_filter.update(self._opacity_target)
+
+    if self._opacity_filter.x <= 0.01:
+      return
+
+    cx = int(self._rect.x + self._rect.width / 2)
+    cy = int(self._rect.y + self._rect.height / 2)
+
+    y_mag = 10
     anim_scale = 5
-    spacing = 28
+    spacing = 14
 
     for i in range(3):
       x = cx - spacing + i * spacing
       y = int(cy + min(math.sin((rl.get_time() - i * 0.2) * anim_scale) * y_mag, 0))
-      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]))
-      rl.draw_circle(x, y, 10, rl.Color(255, 255, 255, alpha))
+      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]) * self._opacity_filter.x)
+      rl.draw_circle(x, y, 5, rl.Color(255, 255, 255, alpha))
 
 
 class WifiIcon(Widget):
@@ -445,6 +459,10 @@ class WifiUIMici(NavWidget):
     # self._network_info_page.set_connecting(lambda: self._connecting)
 
     self._loading_animation = LoadingAnimation()
+    self._loading_opacity_filter = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
+    self._status_label = UnifiedLabel("", 24, FontWeight.SEMI_BOLD, rl.Color(255, 255, 255, int(255 * 0.45)),
+                                      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._status_opacity_filter = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
 
     self._wifi_manager = wifi_manager
     self._connecting: str | None = None
@@ -495,8 +513,20 @@ class WifiUIMici(NavWidget):
     if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT:
       return
 
+    self._loading_animation.set_opacity(1.0)
+
     existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
     print('_UPDATE_BUTTONS')
+
+    # Compute diff for status text
+    added = sum(1 for ssid in self._networks if ssid not in existing_buttons)
+    removed = sum(1 for ssid in existing_buttons if ssid not in self._networks)
+    parts = []
+    if added:
+      parts.append(f"{added} added")
+    if removed:
+      parts.append(f"{removed} removed")
+    self._status_label.set_text(", ".join(parts))
 
     for network in self._networks.values():
       # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
@@ -580,9 +610,18 @@ class WifiUIMici(NavWidget):
     super()._update_state()
     if self.is_pressed:
       self._last_interaction_time = rl.get_time()
+      self._loading_animation.set_opacity(0.0)
 
   def _render(self, _):
     self._scroller.render(self._rect)
+
+    show_loading = rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT
+    opacity = self._loading_opacity_filter.update(1.0 if show_loading else 0.0)
+    anim_x = self._rect.x
+    anim_y = self._rect.y + self._rect.height - 25
+    self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
+    self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * opacity)))
+    self._status_label.render(rl.Rectangle(anim_x + 90, anim_y, 200, 20))
 
     # Update Scroller layout and restore current selection whenever buttons are updated, before first render
     # current_selection = self.get_selected_option()
