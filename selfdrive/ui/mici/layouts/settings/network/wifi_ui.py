@@ -6,7 +6,7 @@ from collections.abc import Callable
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog, BigInputDialog, BigDialogOptionButton, BigConfirmationDialogV2
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_COLOR, LABEL_HORIZONTAL_PADDING, LABEL_VERTICAL_PADDING
 from openpilot.system.ui.lib.application import gui_app, MousePos, FontWeight
 from openpilot.system.ui.widgets import Widget, NavWidget
 from openpilot.system.ui.widgets.scroller import Scroller
@@ -91,14 +91,13 @@ class Divider(Widget):
 class WifiButton(BigButton):
   def __init__(self, network: Network, forget_callback: Callable[[str], None]):
     super().__init__(normalize_ssid(network.ssid), scroll=True)
-    self._label_horizontal_padding = 98
 
     # State
     self._network = network
     self._connecting: Callable[[], str | None] | None = None
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
-    self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
+    self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
 
   @property
   def network(self) -> Network:
@@ -108,11 +107,24 @@ class WifiButton(BigButton):
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
 
+  LABEL_PADDING = 98
+  LABEL_WIDTH = 402 - 98 - 28  # button width - left padding - right padding
+
   def _get_label_font_size(self):
     return 48
 
-  def _width_hint(self) -> int:
-    return int(self._rect.width - self._label_horizontal_padding - 28)
+  def _draw_labels(self, btn_y: float):
+    self._label.set_color(LABEL_COLOR)
+    label_rect = rl.Rectangle(self._rect.x + self.LABEL_PADDING, btn_y + LABEL_VERTICAL_PADDING,
+                              self.LABEL_WIDTH, self._rect.height - LABEL_VERTICAL_PADDING * 2)
+    self._label.render(label_rect)
+
+    if self.value:
+      sub_label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
+      label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
+      sub_label_height = self._sub_label.get_content_height(self.LABEL_WIDTH)
+      sub_label_rect = rl.Rectangle(sub_label_x, label_y - sub_label_height, self.LABEL_WIDTH, sub_label_height)
+      self._sub_label.render(sub_label_rect)
 
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
     super().set_touch_valid_callback(touch_callback)
@@ -262,27 +274,26 @@ class ConnectButton(Widget):
 
 
 class ForgetButton(Widget):
-  HORIZONTAL_MARGIN = 8
+  MARGIN = 12  # bottom and right
 
-  def __init__(self, forget_network: Callable, open_network_manage_page):
+  def __init__(self, forget_network: Callable):
     super().__init__()
     self._forget_network = forget_network
-    self._open_network_manage_page = open_network_manage_page
 
-    self._bg_txt = gui_app.texture("icons_mici/settings/network/new/forget_button.png", 100, 100)
-    self._bg_pressed_txt = gui_app.texture("icons_mici/settings/network/new/forget_button_pressed.png", 100, 100)
-    self._trash_txt = gui_app.texture("icons_mici/settings/network/new/trash.png", 35, 42)
-    self.set_rect(rl.Rectangle(0, 0, 100 + self.HORIZONTAL_MARGIN * 2, 100))
+    self._bg_txt = gui_app.texture("icons_mici/settings/network/new/forget_button.png", 84, 84)
+    self._bg_pressed_txt = gui_app.texture("icons_mici/settings/network/new/forget_button_pressed.png", 84, 84)
+    self._trash_txt = gui_app.texture("icons_mici/settings/network/new/trash.png", 29, 35)
+    self.set_rect(rl.Rectangle(0, 0, 84 + self.MARGIN * 2, 84 + self.MARGIN * 2))
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
     dlg = BigConfirmationDialogV2("slide to forget", "icons_mici/settings/network/new/trash.png", red=True,
                                   confirm_callback=self._forget_network)
-    gui_app.set_modal_overlay(dlg, callback=self._open_network_manage_page)
+    gui_app.set_modal_overlay(dlg)
 
   def _render(self, _):
     bg_txt = self._bg_pressed_txt if self.is_pressed else self._bg_txt
-    rl.draw_texture(bg_txt, int(self._rect.x + self.HORIZONTAL_MARGIN), int(self._rect.y), rl.WHITE)
+    rl.draw_texture(bg_txt, int(self._rect.x + self.MARGIN), int(self._rect.y + self.MARGIN), rl.WHITE)
 
     trash_x = int(self._rect.x + (self._rect.width - self._trash_txt.width) // 2)
     trash_y = int(self._rect.y + (self._rect.height - self._trash_txt.height) // 2)
@@ -511,12 +522,6 @@ class WifiUIMici(NavWidget):
       divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not (self._networks[btn.network.ssid].is_connected
                                                                                                                   or self._networks[btn.network.ssid].is_saved))
       self._scroller._items.insert(divider_idx, self._saved_divider)
-
-    # TEST: 50% chance to pop last item
-    import random
-    if len(self._scroller._items) > 1 and random.random() < 0.5:
-      print('POPPING LAST')
-      self._scroller._items.pop()
 
     # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
     self._restore_selection = True

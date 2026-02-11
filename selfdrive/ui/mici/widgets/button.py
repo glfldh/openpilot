@@ -113,7 +113,6 @@ class BigButton(Widget):
     self.value = value
     self._icon_size = icon_size
     self._scroll = scroll
-    self._label_horizontal_padding = LABEL_HORIZONTAL_PADDING
     self.set_icon(icon)
 
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
@@ -146,7 +145,7 @@ class BigButton(Widget):
   def _width_hint(self) -> int:
     # Single line if scrolling, so hide behind icon if exists
     icon_size = self._icon_size[0] if self._txt_icon and self._scroll and self.value else 0
-    return int(self._rect.width - self._label_horizontal_padding * 2 - icon_size)
+    return int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2 - icon_size)
 
   def _get_label_font_size(self):
     if len(self.text) <= 18:
@@ -177,6 +176,22 @@ class BigButton(Widget):
   def get_text(self):
     return self.text
 
+  def _draw_labels(self, btn_y: float):
+    label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
+
+    label_color = LABEL_COLOR if self.enabled else rl.Color(255, 255, 255, int(255 * 0.35))
+    self._label.set_color(label_color)
+    label_rect = rl.Rectangle(label_x, btn_y + LABEL_VERTICAL_PADDING, self._width_hint(),
+                              self._rect.height - LABEL_VERTICAL_PADDING * 2)
+    self._label.render(label_rect)
+
+    if self.value:
+      sub_label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
+      label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
+      sub_label_height = self._sub_label.get_content_height(self._width_hint())
+      sub_label_rect = rl.Rectangle(sub_label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
+      self._sub_label.render(sub_label_rect)
+
   def _render(self, _):
     # draw _txt_default_bg
     txt_bg = self._txt_default_bg
@@ -190,20 +205,7 @@ class BigButton(Widget):
     btn_y = self._rect.y + (self._rect.height * (1 - scale)) / 2
     rl.draw_texture_ex(txt_bg, (btn_x, btn_y), 0, scale, rl.WHITE)
 
-    # LABEL ------------------------------------------------------------------
-    label_x = self._rect.x + self._label_horizontal_padding
-
-    label_color = LABEL_COLOR if self.enabled else rl.Color(255, 255, 255, int(255 * 0.35))
-    self._label.set_color(label_color)
-    label_rect = rl.Rectangle(label_x, btn_y + LABEL_VERTICAL_PADDING, self._width_hint(),
-                              self._rect.height - LABEL_VERTICAL_PADDING * 2)
-    self._label.render(label_rect)
-
-    if self.value:
-      label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
-      sub_label_height = self._sub_label.get_content_height(self._width_hint())
-      sub_label_rect = rl.Rectangle(label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
-      self._sub_label.render(sub_label_rect)
+    self._draw_labels(btn_y)
 
     # ICON -------------------------------------------------------------------
     if self._txt_icon:
