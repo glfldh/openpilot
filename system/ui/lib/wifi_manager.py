@@ -12,7 +12,7 @@ from jeepney import DBusAddress, new_method_call
 from jeepney.bus_messages import MatchRule, message_bus
 from jeepney.io.blocking import open_dbus_connection as open_dbus_connection_blocking
 from jeepney.io.threading import DBusRouter, open_dbus_connection as open_dbus_connection_threading
-from jeepney.low_level import MessageType
+from jeepney.low_level import MessageType, HeaderFields as HF
 from jeepney.wrappers import Properties
 
 from openpilot.common.swaglog import cloudlog
@@ -36,6 +36,34 @@ TETHERING_IP_ADDRESS = "192.168.43.1"
 DEFAULT_TETHERING_PASSWORD = "swagswagcomma"
 SIGNAL_QUEUE_SIZE = 10
 SCAN_PERIOD_SECONDS = 5
+
+
+_dbus_call_idx = 0
+
+def _fmt_dbus(msg) -> str:
+  global _dbus_call_idx
+  _dbus_call_idx += 1
+  f = msg.header.fields
+  path = f.get(HF.path, '?')
+  member = f.get(HF.member, '?')
+  body = repr(msg.body)
+  if len(body) > 200:
+    body = body[:200] + '...'
+  return f"[DBUS #{_dbus_call_idx}] {path} {member} {body}"
+
+
+def _wrap_dbus_send_and_get_reply(original):
+  def wrapper(msg, *args, **kwargs):
+    print(_fmt_dbus(msg), flush=True)
+    return original(msg, *args, **kwargs)
+  return wrapper
+
+
+def _wrap_dbus_send(original):
+  def wrapper(msg, *args, **kwargs):
+    print(_fmt_dbus(msg), flush=True)
+    return original(msg, *args, **kwargs)
+  return wrapper
 
 
 class SecurityType(IntEnum):
@@ -136,6 +164,11 @@ class WifiManager:
       self._router_main = DBusRouter(open_dbus_connection_threading(bus="SYSTEM"))  # used by scanner / general method calls
       self._conn_monitor = open_dbus_connection_blocking(bus="SYSTEM")  # used by state monitor thread
       self._nm = DBusAddress(NM_PATH, bus_name=NM, interface=NM_IFACE)
+
+      # Wrap D-Bus methods to log all outgoing messages for debugging NM crashes
+      self._router_main.send_and_get_reply = _wrap_dbus_send_and_get_reply(self._router_main.send_and_get_reply)
+      self._router_main.send = _wrap_dbus_send(self._router_main.send)
+      self._conn_monitor.send_and_get_reply = _wrap_dbus_send_and_get_reply(self._conn_monitor.send_and_get_reply)
     except FileNotFoundError:
       cloudlog.exception("Failed to connect to system D-Bus")
       self._router_main = None
@@ -527,33 +560,34 @@ class WifiManager:
 
     threading.Thread(target=worker, daemon=True).start()
 
-  def _update_current_network_metered(self) -> None:
+  def _update_current_network_metered(self, active_conns) -> None:
     if self._wifi_device is None:
       cloudlog.warning("No WiFi device found")
       return
 
     self._current_network_metered = MeteredType.UNKNOWN
-    for active_conn in self._get_active_connections():
+    for active_conn in active_conns:
       conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-      conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
+      props = self._router_main.send_and_get_reply(Properties(conn_addr).get_all()).body[0]
+      if props.get('Type', ('s', ''))[1] != '802-11-wireless':
+        continue
 
-      if conn_type == '802-11-wireless':
-        conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
-        if conn_path == "/":
-          continue
+      conn_path = props.get('Connection', ('o', '/'))[1]
+      if conn_path == "/":
+        continue
 
-        settings = self._get_connection_settings(conn_path)
+      settings = self._get_connection_settings(conn_path)
 
-        if len(settings) == 0:
-          cloudlog.warning(f'Failed to get connection settings for {conn_path}')
-          continue
+      if len(settings) == 0:
+        cloudlog.warning(f'Failed to get connection settings for {conn_path}')
+        continue
 
-        metered_prop = settings['connection'].get('metered', ('i', 0))[1]
-        if metered_prop == MeteredType.YES:
-          self._current_network_metered = MeteredType.YES
-        elif metered_prop == MeteredType.NO:
-          self._current_network_metered = MeteredType.NO
-        return
+      metered_prop = settings['connection'].get('metered', ('i', 0))[1]
+      if metered_prop == MeteredType.YES:
+        self._current_network_metered = MeteredType.YES
+      elif metered_prop == MeteredType.NO:
+        self._current_network_metered = MeteredType.NO
+      return
 
   def set_current_network_metered(self, metered: MeteredType):
     def worker():
@@ -595,6 +629,7 @@ class WifiManager:
 
   def _update_networks(self):
     with self._lock:
+      t = time.monotonic()
       if self._wifi_device is None:
         cloudlog.warning("No WiFi device found")
         return
@@ -634,32 +669,38 @@ class WifiManager:
       networks.sort(key=lambda n: (-n.is_connected, -n.is_saved, -round(n.strength / 100 * 2), n.ssid.lower()))
       self._networks = networks
 
-      self._update_ipv4_address()
-      self._update_current_network_metered()
+      active_conns = self._get_active_connections()
+      self._update_ipv4_address(active_conns)
+      self._update_current_network_metered(active_conns)
 
       self._enqueue_callbacks(self._networks_updated, self._networks)
+      dt = time.monotonic() - t
+      print(f"Updated {len(networks)} networks in {dt*1000:.0f} ms ({dt / len(networks)*1000 if len(networks) else 0:.2f} ms/network)", flush=True)
 
-  def _update_ipv4_address(self):
+  def _update_ipv4_address(self, active_conns):
     if self._wifi_device is None:
       cloudlog.warning("No WiFi device found")
       return
 
     self._ipv4_address = ""
 
-    for conn_path in self._get_active_connections():
+    for conn_path in active_conns:
       conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-      conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
-      if conn_type == '802-11-wireless':
-        ip4config_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Ip4Config')).body[0][1]
+      props = self._router_main.send_and_get_reply(Properties(conn_addr).get_all()).body[0]
+      if props.get('Type', ('s', ''))[1] != '802-11-wireless':
+        continue
 
-        if ip4config_path != "/":
-          ip4config_addr = DBusAddress(ip4config_path, bus_name=NM, interface=NM_IP4_CONFIG_IFACE)
-          address_data = self._router_main.send_and_get_reply(Properties(ip4config_addr).get('AddressData')).body[0][1]
+      ip4config_path = props.get('Ip4Config', ('o', '/'))[1]
+      if ip4config_path == "/":
+        continue
 
-          for entry in address_data:
-            if 'address' in entry:
-              self._ipv4_address = entry['address'][1]
-              return
+      ip4config_addr = DBusAddress(ip4config_path, bus_name=NM, interface=NM_IP4_CONFIG_IFACE)
+      address_data = self._router_main.send_and_get_reply(Properties(ip4config_addr).get('AddressData')).body[0][1]
+
+      for entry in address_data:
+        if 'address' in entry:
+          self._ipv4_address = entry['address'][1]
+          return
 
   def __del__(self):
     self.stop()
