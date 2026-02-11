@@ -9,7 +9,7 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
-from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
+from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
@@ -89,12 +89,9 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 
   return [a_target[0], min(a_target[1], a_x_allowed)]
 
-def parse_model(model_msg):
-  if len(model_msg.meta.disengagePredictions.gasPressProbs) > 1:
-    throttle_prob = model_msg.meta.disengagePredictions.gasPressProbs[1]
-  else:
-    throttle_prob = 1.0
-  return throttle_prob
+def get_throttle_prob(model_msg):
+  gas_press_probs = model_msg.meta.disengagePredictions.gasPressProbs
+  return gas_press_probs[1] if len(gas_press_probs) > 1 else 1.0
 
 # TODO should we assume larger deceleration for ego to break harsher
 def get_follow_distance(v_ego, v_lead, t_follow):
@@ -165,7 +162,7 @@ class LongitudinalPlanner:
       self.prev_accel_clip = accel_clip
 
     # Prevent divergence, smooth in current v_ego
-    throttle_prob = parse_model(sm['modelV2'])
+    throttle_prob = get_throttle_prob(sm['modelV2'])
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
