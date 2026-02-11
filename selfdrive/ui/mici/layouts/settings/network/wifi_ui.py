@@ -78,9 +78,19 @@ class WifiIcon(Widget):
       rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, rl.WHITE)
 
 
+class Divider(Widget):
+  def __init__(self):
+    super().__init__()
+    self.set_rect(rl.Rectangle(0, 0, 4, 120))
+
+  def _render(self, _):
+    # rounded edges, 45% white
+    rl.draw_rectangle_rounded(self._rect, self._rect.width / 2, 4, rl.Color(255, 255, 255, int(255 * 0.45)))
+
+
 class WifiButton(BigButton):
   def __init__(self, network: Network, forget_callback: Callable[[str], None]):
-    super().__init__(network.ssid, scroll=True)
+    super().__init__(normalize_ssid(network.ssid), scroll=True)
     self._label_horizontal_padding = 98
 
     # State
@@ -89,6 +99,10 @@ class WifiButton(BigButton):
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
+
+  @property
+  def is_pressed(self) -> bool:
+    return super().is_pressed and not self._forget_btn.is_pressed
 
   def _get_label_font_size(self):
     return 48
@@ -131,7 +145,6 @@ class WifiButton(BigButton):
       self.set_value("connect")
       self.set_enabled(True)
 
-    # self._title.set_text(normalize_ssid(self._network.ssid))
     # if self._network.security_type == SecurityType.OPEN:
     #   self._subtitle.set_text("open")
     # elif self._network.security_type == SecurityType.UNSUPPORTED:
@@ -474,6 +487,7 @@ class WifiUIMici(NavWidget):
         # network_button = BigButton(network.ssid, 'connected')
         network_button = WifiButton(network, self._forget_network)
         network_button.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
+        network_button.set_connecting(lambda: self._connecting)
 
       self._scroller.add_widget(network_button)
 
