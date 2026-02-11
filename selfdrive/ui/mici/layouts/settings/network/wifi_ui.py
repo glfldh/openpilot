@@ -44,7 +44,7 @@ class WifiIcon(Widget):
     self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock.png", 22, 32)
 
     self._network: Network | None = None
-    self._scale = 0.7  # TODO: remove this
+    self._scale = 0.6  # TODO: remove this
 
   def set_current_network(self, network: Network):
     self._network = network
@@ -98,6 +98,7 @@ class WifiButton(BigButton):
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
+    self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
 
   @property
   def network(self) -> Network:
@@ -123,6 +124,12 @@ class WifiButton(BigButton):
       sub_label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self.LABEL_WIDTH)
+
+      if self._network.is_connected:
+        check_y = int(label_y - sub_label_height + (sub_label_height - self._check_txt.height) / 2)
+        rl.draw_texture(self._check_txt, int(sub_label_x), check_y, rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)))
+        sub_label_x += self._check_txt.width + 14
+
       sub_label_rect = rl.Rectangle(sub_label_x, label_y - sub_label_height, self.LABEL_WIDTH, sub_label_height)
       self._sub_label.render(sub_label_rect)
 
@@ -146,34 +153,30 @@ class WifiButton(BigButton):
     return is_connecting
 
   def _update_state(self):
-    # from old network info page, can be cleaned up?
-    # self._connect_btn.set_full(not self._network.is_saved and not self._is_connecting)
-    if self._is_connecting:
-      self.set_value("connecting...")
+    if self._is_connecting or self._network.is_connected or self._network.security_type == SecurityType.UNSUPPORTED:
       self.set_enabled(False)
-    elif self._network.is_connected:
-      self.set_value("connected")
-      self.set_enabled(False)
-    elif self._network.security_type == SecurityType.UNSUPPORTED:
-      self.set_value("connect")
-      self.set_enabled(False)
+      self._sub_label.set_color(rl.Color(255, 255, 255, int(255 * 0.585)))
+      self._sub_label.set_font_weight(FontWeight.ROMAN)
+
+      if self._is_connecting:
+        self.set_value("connecting...")
+      elif self._network.is_connected:
+        self.set_value("connected")
+      else:
+        self.set_value("unsupported")
+
     else:  # saved or unknown
       self.set_value("connect")
       self.set_enabled(True)
-
-    # if self._network.security_type == SecurityType.OPEN:
-    #   self._subtitle.set_text("open")
-    # elif self._network.security_type == SecurityType.UNSUPPORTED:
-    #   self._subtitle.set_text("unsupported")
-    # else:
-    #   self._subtitle.set_text("secured")
+      self._sub_label.set_color(rl.Color(255, 255, 255, int(255 * 0.9)))
+      self._sub_label.set_font_weight(FontWeight.SEMI_BOLD)
 
   def _render(self, _):
     super()._render(_)
 
     wifi_icon_rect = rl.Rectangle(
-      self._rect.x + 20,
-      self._rect.y,
+      self._rect.x,
+      self._rect.y + 23,
       self._wifi_icon.rect.width,
       self._wifi_icon.rect.height,
     )
