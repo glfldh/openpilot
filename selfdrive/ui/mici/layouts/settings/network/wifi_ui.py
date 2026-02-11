@@ -618,8 +618,8 @@ class WifiUIMici(NavWidget):
   def _render(self, _):
     self._scroller.render(self._rect)
 
-    anim_x = self._rect.x + self._rect.width - 90
-    anim_y = self._rect.y + self._rect.height - 25
+    anim_x = self._rect.x
+    anim_y = self._rect.y + 5
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
 
     # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
