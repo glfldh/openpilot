@@ -561,10 +561,6 @@ class WifiManager:
     threading.Thread(target=worker, daemon=True).start()
 
   def _update_current_network_metered(self, active_conns) -> None:
-    if self._wifi_device is None:
-      cloudlog.warning("No WiFi device found")
-      return
-
     self._current_network_metered = MeteredType.UNKNOWN
     for active_conn in active_conns:
       conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
@@ -636,8 +632,9 @@ class WifiManager:
 
       # returns '/' if no active AP
       wifi_addr = DBusAddress(self._wifi_device, NM, interface=NM_WIRELESS_IFACE)
-      active_ap_path = self._router_main.send_and_get_reply(Properties(wifi_addr).get('ActiveAccessPoint')).body[0][1]
-      ap_paths = self._router_main.send_and_get_reply(new_method_call(wifi_addr, 'GetAllAccessPoints')).body[0]
+      wifi_props = self._router_main.send_and_get_reply(Properties(wifi_addr).get_all()).body[0]
+      active_ap_path = wifi_props.get('ActiveAccessPoint', ('o', '/'))[1]
+      ap_paths = wifi_props.get('AccessPoints', ('ao', []))[1]
 
       aps: dict[str, list[AccessPoint]] = {}
 
@@ -678,10 +675,6 @@ class WifiManager:
       print(f"Updated {len(networks)} networks in {dt*1000:.0f} ms ({dt / len(networks)*1000 if len(networks) else 0:.2f} ms/network)", flush=True)
 
   def _update_ipv4_address(self, active_conns):
-    if self._wifi_device is None:
-      cloudlog.warning("No WiFi device found")
-      return
-
     self._ipv4_address = ""
 
     for conn_path in active_conns:
