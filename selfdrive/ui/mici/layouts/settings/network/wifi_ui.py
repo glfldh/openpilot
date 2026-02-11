@@ -459,9 +459,9 @@ class WifiUIMici(NavWidget):
     # self._network_info_page.set_connecting(lambda: self._connecting)
 
     self._loading_animation = LoadingAnimation()
-    self._loading_opacity_filter = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
     self._status_label = UnifiedLabel("", 24, FontWeight.SEMI_BOLD, rl.Color(255, 255, 255, int(255 * 0.45)),
                                       alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._status_opacity_target = 0.0
     self._status_opacity_filter = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
 
     self._wifi_manager = wifi_manager
@@ -611,16 +611,19 @@ class WifiUIMici(NavWidget):
     if self.is_pressed:
       self._last_interaction_time = rl.get_time()
       self._loading_animation.set_opacity(0.0)
+      self._status_opacity_target = 0.0
+    elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
+      self._status_opacity_target = 1.0
 
   def _render(self, _):
     self._scroller.render(self._rect)
 
-    show_loading = rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT
-    opacity = self._loading_opacity_filter.update(1.0 if show_loading else 0.0)
     anim_x = self._rect.x
     anim_y = self._rect.y + self._rect.height - 25
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
-    self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * opacity)))
+
+    status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
+    self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
     self._status_label.render(rl.Rectangle(anim_x + 90, anim_y, 200, 20))
 
     # Update Scroller layout and restore current selection whenever buttons are updated, before first render
