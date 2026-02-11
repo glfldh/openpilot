@@ -114,7 +114,7 @@ class WifiButton(BigButton):
   def _get_label_font_size(self):
     return 48
 
-  def _draw_labels(self, btn_y: float):
+  def _draw_content(self, btn_y: float):
     self._label.set_color(LABEL_COLOR)
     label_rect = rl.Rectangle(self._rect.x + self.LABEL_PADDING, btn_y + LABEL_VERTICAL_PADDING,
                               self.LABEL_WIDTH, self._rect.height - LABEL_VERTICAL_PADDING * 2)
