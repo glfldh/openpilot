@@ -101,6 +101,10 @@ class WifiButton(BigButton):
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid), None)
 
   @property
+  def network(self) -> Network:
+    return self._network
+
+  @property
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
 
@@ -418,6 +422,7 @@ class WifiUIMici(NavWidget):
                               # horizontal=False, pad_start=100, pad_end=100, spacing=0, snap_items=True
                               snap_items=False,
                               )
+    self._saved_divider = Divider()
 
     # Set up back navigation
     self.set_back_callback(back_callback)
@@ -476,11 +481,14 @@ class WifiUIMici(NavWidget):
     if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT:
       return
 
+    existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
+    print('_UPDATE_BUTTONS')
+
     for network in self._networks.values():
       # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
-      network_button_idx = next((i for i, btn in enumerate(self._scroller._items) if btn.text == network.ssid), None)
-      if network_button_idx is not None:
-        network_button = self._scroller._items.pop(network_button_idx)
+      if network.ssid in existing_buttons:
+        network_button = existing_buttons[network.ssid]
+        self._scroller._items.remove(network_button)
         # Update network on existing button
         network_button.set_current_network(network)
       else:
@@ -492,7 +500,17 @@ class WifiUIMici(NavWidget):
       self._scroller.add_widget(network_button)
 
     # remove networks no longer present
-    self._scroller._items[:] = [btn for btn in self._scroller._items if btn.text in self._networks]
+    self._scroller._items[:] = [btn for btn in self._scroller._items if not isinstance(btn, WifiButton) or btn.network.ssid in self._networks]
+
+    # insert divider between saved and unsaved groups
+    has_saved = any(n.is_connected or n.is_saved for n in self._networks.values())
+    has_unsaved = any(not n.is_connected and not n.is_saved for n in self._networks.values())
+    if self._saved_divider in self._scroller._items:
+      self._scroller._items.remove(self._saved_divider)
+    if has_saved and has_unsaved:
+      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not (self._networks[btn.network.ssid].is_connected
+                                                                                                                  or self._networks[btn.network.ssid].is_saved))
+      self._scroller._items.insert(divider_idx, self._saved_divider)
 
     # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
     self._restore_selection = True
