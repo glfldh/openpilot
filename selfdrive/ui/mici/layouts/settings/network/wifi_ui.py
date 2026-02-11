@@ -510,9 +510,9 @@ class WifiUIMici(NavWidget):
     self._update_buttons()
     # self._network_info_page.update_networks(self._networks)
 
-  def _update_buttons(self):
+  def _update_buttons(self, force: bool = False):
     # Don't update buttons while user is actively interacting
-    if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT:
+    if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT and not force:
       return
 
     self._loading_animation.set_opacity(1.0)
@@ -530,7 +530,10 @@ class WifiUIMici(NavWidget):
       parts.append(f"{removed} removed")
     self._status_label.set_text(", ".join(parts))
 
-    for network in self._networks.values():
+    # Sort with connecting first (wifi_manager doesn't know about connecting state)
+    networks = sorted(self._networks.values(), key=lambda n: (-(n.ssid == self._connecting), -n.is_connected, -n.is_saved))
+
+    for network in networks:
       # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
       if network.ssid in existing_buttons:
         network_button = existing_buttons[network.ssid]
@@ -564,8 +567,9 @@ class WifiUIMici(NavWidget):
   def _connect_with_password(self, ssid: str, password: str):
     if password:
       self._connecting = ssid
+      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(ssid, password)
-      self._update_buttons()
+      self._update_buttons(True)
 
   # def _on_option_selected(self, option: str):
   #   super()._on_option_selected(option)
@@ -580,14 +584,17 @@ class WifiUIMici(NavWidget):
       cloudlog.warning(f"Trying to connect to unknown network: {ssid}")
       return
 
+    print('connecting to', ssid, 'saved:', network.is_saved, 'security:', network.security_type)
     if network.is_saved:
       self._connecting = network.ssid
+      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.activate_connection(network.ssid)
-      self._update_buttons()
+      self._update_buttons(True)
     elif network.security_type == SecurityType.OPEN:
       self._connecting = network.ssid
+      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(network.ssid, "")
-      self._update_buttons()
+      self._update_buttons(True)
     else:
       self._on_need_auth(network.ssid, False)
 
@@ -617,12 +624,16 @@ class WifiUIMici(NavWidget):
     elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
       self._status_opacity_target = 1.0
 
+    if len(self._networks) == 0:
+      self._loading_animation.set_opacity(1.0)
+
   def _render(self, _):
     self._scroller.render(self._rect)
 
     anim_x = self._rect.x
     anim_y = self._rect.y + self._rect.height - 25 + 2
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
+    print('loading')
 
     # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
     # self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
