@@ -66,15 +66,15 @@ class WifiIcon(Widget):
     else:
       strength_icon = self._wifi_low_txt
 
-    icon_x = int(self._rect.x + (self._rect.width - strength_icon.width * self._scale) // 2)
-    icon_y = int(self._rect.y + (self._rect.height - strength_icon.height * self._scale) // 2)
+    icon_x = self._rect.x + (self._rect.width - strength_icon.width * self._scale) // 2
+    icon_y = self._rect.y + (self._rect.height - strength_icon.height * self._scale) // 2
     rl.draw_texture_ex(strength_icon, (icon_x, icon_y), 0.0, self._scale, rl.WHITE)
 
     # Render lock icon at lower right of wifi icon if secured
     if self._network.security_type not in (SecurityType.OPEN, SecurityType.UNSUPPORTED):
       lock_scale = self._scale * 1.1
-      lock_x = int(icon_x + 1 + strength_icon.width * self._scale - self._lock_txt.width * lock_scale / 2)
-      lock_y = int(icon_y + 1 + strength_icon.height * self._scale - self._lock_txt.height * lock_scale / 2)
+      lock_x = icon_x + 1 + strength_icon.width * self._scale - self._lock_txt.width * lock_scale / 2
+      lock_y = icon_y + 1 + strength_icon.height * self._scale - self._lock_txt.height * lock_scale / 2
       rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, rl.WHITE)
 
 
@@ -146,8 +146,8 @@ class WifiButton(BigButton):
     # Forget button
     if self._network.is_saved or self._is_connecting:
       self._forget_btn.render(rl.Rectangle(
-        self._rect.x + self._rect.width - self._forget_btn.rect.width - 12,
-        btn_y + self._rect.height - self._forget_btn.rect.height - 12,
+        self._rect.x + self._rect.width - self._forget_btn.rect.width,
+        btn_y + self._rect.height - self._forget_btn.rect.height,
         self._forget_btn.rect.width,
         self._forget_btn.rect.height,
       ))
@@ -295,11 +295,12 @@ class ForgetButton(Widget):
 
   def _render(self, _):
     bg_txt = self._bg_pressed_txt if self.is_pressed else self._bg_txt
-    rl.draw_texture(bg_txt, int(self._rect.x + self.MARGIN), int(self._rect.y + self.MARGIN), rl.WHITE)
+    rl.draw_texture_ex(bg_txt, (self._rect.x + (self._rect.width - self._bg_txt.width) / 2,
+                                self._rect.y + (self._rect.height - self._bg_txt.height) / 2), 0, 1.0, rl.WHITE)
 
-    trash_x = int(self._rect.x + (self._rect.width - self._trash_txt.width) // 2)
-    trash_y = int(self._rect.y + (self._rect.height - self._trash_txt.height) // 2)
-    rl.draw_texture(self._trash_txt, trash_x, trash_y, rl.WHITE)
+    trash_x = self._rect.x + (self._rect.width - self._trash_txt.width) / 2
+    trash_y = self._rect.y + (self._rect.height - self._trash_txt.height) / 2
+    rl.draw_texture_ex(self._trash_txt, (trash_x, trash_y), 0, 1.0, rl.WHITE)
 
 
 class NetworkInfoPage(NavWidget):
