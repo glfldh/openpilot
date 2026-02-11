@@ -28,6 +28,8 @@ class LoadingAnimation(Widget):
     self._opacity_target = opacity
 
   def _render(self, _):
+    # rl.draw_rectangle_lines_ex(self._rect, 1, rl.RED)
+
     self._opacity_filter.update(self._opacity_target)
 
     if self._opacity_filter.x <= 0.01:
@@ -619,7 +621,7 @@ class WifiUIMici(NavWidget):
     self._scroller.render(self._rect)
 
     anim_x = self._rect.x
-    anim_y = self._rect.y + self._rect.height - 25
+    anim_y = self._rect.y + self._rect.height - 25 + 2
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
 
     # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
