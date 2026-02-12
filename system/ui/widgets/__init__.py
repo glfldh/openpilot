@@ -231,7 +231,7 @@ class NavWidget(Widget, abc.ABC):
   """
   A full screen widget that supports back navigation by swiping down from the top.
   """
-  BACK_TOUCH_AREA_PERCENTAGE = 0.65
+  BACK_TOUCH_AREA_PERCENTAGE = 0.8
 
   def __init__(self):
     super().__init__()
