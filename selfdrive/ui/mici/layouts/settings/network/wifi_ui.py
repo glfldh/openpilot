@@ -144,13 +144,6 @@ class WifiButton(BigButton):
 
     super().set_position(x + self._position_filter.x, y)
 
-  # def set_position(self, x: float, y: float) -> None:
-  #   if self._animate_from_x is not None:
-  #     self._position_filter.x = self._animate_from_x - x
-  #     self._animate_from_x = None
-  #   self._position_filter.update(0.0)
-  #   super().set_position(x + self._position_filter.x, y)
-
   def _get_label_font_size(self):
     return 48
 
