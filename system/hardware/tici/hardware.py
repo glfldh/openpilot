@@ -318,7 +318,7 @@ class Tici(HardwareBase):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
   def set_ship_mode(self):
-    sudo_write("1", "/sys/devices/platform/soc/c440000.qcom,spmi/spmi-0/spmi0-02/c440000.qcom,spmi:qcom,pmi8998@2:qcom,qpnp-smb2/power_supply/battery/set_ship_mode")
+    sudo_write("1", "/sys/class/power_supply/battery/set_ship_mode")
 
   def shutdown(self):
     if self.get_device_type() == "mici":
