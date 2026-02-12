@@ -4,7 +4,8 @@ from pathlib import Path
 def dump_external_pickle(obj, path, chunk=45*1024*1024):
   p = Path(path)
   b = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-  for x in p.parent.glob(p.name + ".data-*"): x.unlink()
+  for x in p.parent.glob(p.name + ".data-*"):
+    x.unlink()
 
   parts = []
   for i, off in enumerate(range(0, len(b), chunk), 1):
