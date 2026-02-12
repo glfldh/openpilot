@@ -19,6 +19,7 @@ from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
 from openpilot.selfdrive.modeld.models.commonmodel_pyx import CLContext, MonitoringModelFrame
 from openpilot.selfdrive.modeld.parse_model_outputs import sigmoid, safe_exp
 from openpilot.selfdrive.modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
+from openpilot.selfdrive.modeld.external_pickle import load_external_pickle
 
 PROCESS_NAME = "selfdrive.modeld.dmonitoringmodeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
@@ -42,8 +43,7 @@ class ModelState:
     }
 
     self.tensor_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
-    with open(MODEL_PKL_PATH, "rb") as f:
-      self.model_run = pickle.load(f)
+    self.model_run = load_external_pickle(MODEL_PKL_PATH)
 
   def run(self, buf: VisionBuf, calib: np.ndarray, transform: np.ndarray) -> tuple[np.ndarray, float]:
     self.numpy_inputs['calib'][0,:] = calib

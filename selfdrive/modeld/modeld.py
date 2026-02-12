@@ -30,6 +30,7 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.models.commonmodel_pyx import DrivingModelFrame, CLContext
 from openpilot.selfdrive.modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
+from openpilot.selfdrive.modeld.external_pickle import load_external_pickle
 
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
@@ -172,11 +173,8 @@ class ModelState:
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
 
-    with open(VISION_PKL_PATH, "rb") as f:
-      self.vision_run = pickle.load(f)
-
-    with open(POLICY_PKL_PATH, "rb") as f:
-      self.policy_run = pickle.load(f)
+    self.vision_run = load_external_pickle(VISION_PKL_PATH)
+    self.policy_run = load_external_pickle(POLICY_PKL_PATH)
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
