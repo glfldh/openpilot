@@ -269,10 +269,6 @@ class WifiUIMici(NavWidget):
     self.set_back_callback(back_callback)
 
     self._loading_animation = LoadingAnimation()
-    self._status_label = UnifiedLabel("", 24, FontWeight.SEMI_BOLD, rl.Color(255, 255, 255, int(255 * 0.45)),
-                                      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
-    self._status_opacity_target = 0.0
-    self._status_opacity_filter = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
 
     self._wifi_manager = wifi_manager
     self._connecting: str | None = None
@@ -330,20 +326,8 @@ class WifiUIMici(NavWidget):
     if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT and not force:
       return
 
-    self._loading_animation.set_opacity(1.0)
-
     existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
     print('_UPDATE_BUTTONS')
-
-    # Compute diff for status text
-    added = sum(1 for ssid in self._networks if ssid not in existing_buttons)
-    removed = sum(1 for ssid in existing_buttons if ssid not in self._networks)
-    parts = []
-    if added:
-      parts.append(f"{added} added")
-    if removed:
-      parts.append(f"{removed} removed")
-    self._status_label.set_text(", ".join(parts))
 
     # Sort with connecting first (wifi_manager doesn't know about connecting state)
     networks = sorted(self._networks.values(), key=lambda n: (-(n.ssid == self._connecting), -n.is_connected, -n.is_saved))
@@ -438,9 +422,8 @@ class WifiUIMici(NavWidget):
     if self.is_pressed:
       self._last_interaction_time = rl.get_time()
       self._loading_animation.set_opacity(0.0)
-      self._status_opacity_target = 0.0
     elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
-      self._status_opacity_target = 1.0
+      self._loading_animation.set_opacity(1.0)
 
     if len(self._networks) == 0:
       self._loading_animation.set_opacity(1.0)
@@ -451,11 +434,6 @@ class WifiUIMici(NavWidget):
     anim_x = self._rect.x
     anim_y = self._rect.y + self._rect.height - 25 + 2
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
-    # print('loading')
-
-    # status_opacity = self._status_opacity_filter.update(self._status_opacity_target)
-    # self._status_label.set_color(rl.Color(255, 255, 255, int(255 * 0.45 * status_opacity)))
-    # self._status_label.render(rl.Rectangle(anim_x + 90, anim_y, 200, 20))
 
     # Update Scroller layout and restore current selection whenever buttons are updated, before first render
     # current_selection = self.get_selected_option()
