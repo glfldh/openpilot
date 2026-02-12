@@ -24,7 +24,8 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 ACCEL_CLIP_JERK_MAX = 1.0
 
 K_CRUISE = 0.27
-TAU_CRUISE = 0.7
+TAU_CRUISE = 1.0
+TAU_LEAD = 0.05
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -141,8 +142,10 @@ class LongitudinalPlanner:
 
     out_accels = {}
     action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-    out_accels[self.mpc.lead_source] = get_accel_from_plan(
+    lead_accel, should_stop_lead = get_accel_from_plan(
       self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX, action_t, self.CP.vEgoStopping)
+    lead_accel = smooth_value(lead_accel, self.output_a_target, TAU_LEAD)
+    out_accels[self.mpc.lead_source] = (lead_accel, should_stop_lead)
     if sm['selfdriveState'].experimentalMode:
       out_accels[LongitudinalPlanSource.e2e] = (sm['modelV2'].action.desiredAcceleration, sm['modelV2'].action.shouldStop)
 
