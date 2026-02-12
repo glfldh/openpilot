@@ -301,15 +301,18 @@ class WifiManager:
           if new_state == NMDeviceState.NEED_AUTH and change_reason == NM_DEVICE_STATE_REASON_SUPPLICANT_DISCONNECT and len(self._connecting_to_ssid):
             self.forget_connection(self._connecting_to_ssid, block=True)
             self._enqueue_callbacks(self._need_auth, self._connecting_to_ssid)
+            print('WifiManager need auth', self._connecting_to_ssid)
             self._connecting_to_ssid = ""
 
           elif new_state == NMDeviceState.ACTIVATED:
             if len(self._activated):
               self._update_networks()
             self._enqueue_callbacks(self._activated)
+            print('WifiManager activated', self._connecting_to_ssid)
             self._connecting_to_ssid = ""
 
           elif new_state == NMDeviceState.DISCONNECTED and change_reason != NM_DEVICE_STATE_REASON_NEW_ACTIVATION:
+            print('WifiManager disconnected', self._connecting_to_ssid)
             self._connecting_to_ssid = ""
             self._enqueue_callbacks(self._forgotten)
 
@@ -320,6 +323,7 @@ class WifiManager:
           print('requesting scan!')
           self._request_scan()
           self._last_network_scan = time.monotonic()
+      print('WifiManager connecting', self._connecting_to_ssid)
       time.sleep(1 / 2.)
 
   def _wait_for_wifi_device(self):
@@ -657,6 +661,8 @@ class WifiManager:
         # sort with quantized strength to reduce jumping
         networks.sort(key=lambda n: (-n.is_connected, -n.is_saved, -round(n.strength / 100 * 2), n.ssid.lower()))
         self._networks = networks
+
+        # print('Updated networks:', {n.ssid: {"connected": n.is_connected, "saved": n.is_saved, "strength": n.strength} for n in networks})
 
         self._update_active_connection_info()
 
