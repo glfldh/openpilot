@@ -1,5 +1,9 @@
 import os
 import glob
+from pathlib import Path
+from SCons.Script import Builder, Action, Scanner, Value
+
+CHUNK_BYTES = 45*1024*1024
 
 Import('env', 'envCython', 'arch', 'cereal', 'messaging', 'common', 'visionipc')
 lenv = env.Clone()
@@ -38,25 +42,80 @@ for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
   cmd = f'python3 {Dir("#selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
   lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files, cmd)
 
-split_pickle_files = [File(f).abspath for f in ['split_pickle.py', 'external_pickle.py']]
+def _define_chunk_commands(parts_txt_path, env, raw_path):
+  if not os.path.exists(parts_txt_path):
+    return []
+
+  with open(parts_txt_path) as f:
+    lines = [x.strip() for x in f.read().splitlines() if x.strip()]
+
+  i = 0
+  while i < len(lines) and "=" in lines[i]:
+    i += 1
+
+  parts_dir = os.path.dirname(parts_txt_path)
+  res = []
+  for line in lines[i:]:
+    fields = line.split()
+    if len(fields) < 2:
+      continue
+    name = fields[0]
+    part_node = env.File(os.path.join(parts_dir, name))
+
+    if not part_node.has_builder():
+      env.Command(
+        part_node,
+        [parts_txt_path],
+        f'python3 {env.Dir("#selfdrive/modeld").abspath}/write_part.py $SOURCE {raw_path} $TARGET'
+      )
+      env.Requires(part_node, raw_path)
+
+    res.append(part_node)
+  return res
+
+def _parts_scanner(node, env, path):
+  if not node.exists():
+    return []
+  raw_path = node.sources[0].get_path() if getattr(node, 'sources', None) else ''
+  return _define_chunk_commands(node.abspath, env, raw_path)
+
+
+lenv['BUILDERS']['EnsureParts'] = Builder(
+  action=Action('python3 -c "open(\\"$TARGET\\", \\"w\\").write(\\"ok\\")"'),
+  source_scanner=Scanner(_parts_scanner),
+)
+
+split_pickle_files = [File(f).abspath for f in ['write_part.py', 'make_parts.py', 'external_pickle.py']]
 
 def tg_compile(flags, model_name):
   pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
   fn = File(f"models/{model_name}").abspath
-  # stage 1: compile (cached)
+  out = fn + "_tinygrad.pkl"
+  raw = out + ".raw"
+  stamp = out + ".parts.stamp"
+  parts_txt = out + ".parts"
+
   lenv.Command(
-    fn + "_tinygrad_full.pkl",
+    raw,
     [fn + ".onnx"] + tinygrad_files,
-    f'{pythonpath_string} {flags} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {fn}_tinygrad_full.pkl'
+    f'{pythonpath_string} {flags} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {raw}'
   )
-  # stage 2: create pointer + data parts (not cached)
-  node = lenv.Command(
-    fn + "_tinygrad.pkl",
-    [fn + "_tinygrad_full.pkl"] + split_pickle_files,
-    f'cd {Dir("#selfdrive/modeld").abspath} && python3 split_pickle.py {fn}_tinygrad_full.pkl {fn}_tinygrad.pkl'
+
+  _define_chunk_commands(parts_txt, lenv, raw)
+
+  lenv.Command(
+    parts_txt,
+    [raw] + split_pickle_files + [Value(str(CHUNK_BYTES))],
+    f'python3 {Dir("#selfdrive/modeld").abspath}/make_parts.py {raw} {parts_txt} {Path(out).name} {CHUNK_BYTES}'
   )
-  lenv.NoCache(node)
-  lenv.Clean(node, Glob(f'{fn}_tinygrad.pkl.data-*'))
+
+  node = lenv.EnsureParts(stamp, parts_txt)
+
+  lenv.Clean(node, Glob(out + ".data-*"))
+  lenv.Clean(node, raw)
+  lenv.Clean(node, parts_txt)
+  lenv.Clean(node, stamp)
+
   return node
 
 # Compile small models

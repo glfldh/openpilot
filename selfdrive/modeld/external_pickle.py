@@ -1,27 +1,26 @@
-import hashlib
 import pickle
+import hashlib
 from pathlib import Path
 
-def dump_external_pickle(obj, path, chunk=45*1024*1024):
-  p = Path(path)
-  b = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-  for x in p.parent.glob(p.name + ".data-*"):
-    x.unlink()
+def load_external_pickle(parts_path):
+  parts_txt = Path(parts_path)
 
-  parts = []
-  for i, off in enumerate(range(0, len(b), chunk), 1):
-    fn = f"{p.name}.data-{i:03d}"
-    (p.parent / fn).write_bytes(b[off:off+chunk])
-    parts.append(fn)
+  lines = [x.strip() for x in parts_txt.read_text().splitlines() if x.strip()]
 
-  p.write_bytes(pickle.dumps({"_pickle_pointer_v1": True, "parts": parts, "sha256": hashlib.sha256(b).hexdigest()},
-                              protocol=pickle.HIGHEST_PROTOCOL))
+  meta = {}
+  i = 0
+  while i < len(lines) and "=" in lines[i]:
+    k, v = lines[i].split("=", 1)
+    meta[k] = v
+    i += 1
 
-def load_external_pickle(path):
-  p = Path(path)
-  x = pickle.loads(p.read_bytes())
-  if isinstance(x, dict) and x.get("_pickle_pointer_v1"):
-    b = b"".join((p.parent / fn).read_bytes() for fn in x["parts"])
-    assert hashlib.sha256(b).hexdigest() == x["sha256"], "external pickle hash mismatch"
-    return pickle.loads(b)
-  return x
+  # remaining lines: "<filename> <hash>"
+  part_lines = lines[i:]
+  parts = [ln.split(None, 1)[0] for ln in part_lines]
+
+  b = b"".join((parts_txt.parent / fn).read_bytes() for fn in parts)
+
+  if len(b) != int(meta["len"]) or hashlib.blake2b(b, digest_size=16).hexdigest() != meta["hash"]:
+    raise ValueError("checksum mismatch")
+
+  return pickle.loads(b)

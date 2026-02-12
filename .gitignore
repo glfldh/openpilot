@@ -65,6 +65,9 @@ cppcheck_report.txt
 comma*.sh
 
 selfdrive/modeld/models/*.pkl
+selfdrive/modeld/models/*.pkl.raw
+selfdrive/modeld/models/*.pkl.parts
+selfdrive/modeld/models/*.pkl.parts.stamp
 selfdrive/modeld/models/*.pkl.data-*
 
 # openpilot log files

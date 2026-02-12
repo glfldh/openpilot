@@ -23,7 +23,7 @@ from openpilot.selfdrive.modeld.external_pickle import load_external_pickle
 
 PROCESS_NAME = "selfdrive.modeld.dmonitoringmodeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
-MODEL_PKL_PATH = Path(__file__).parent / 'models/dmonitoring_model_tinygrad.pkl'
+MODEL_PKL_PATH = Path(__file__).parent / 'models/dmonitoring_model_tinygrad.pkl.parts'
 METADATA_PATH = Path(__file__).parent / 'models/dmonitoring_model_metadata.pkl'
 
 
