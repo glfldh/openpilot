@@ -286,6 +286,7 @@ class WifiManager:
         while len(props_q):
           iface, changed, _ = props_q.popleft().body
           if iface == NM_WIRELESS_IFACE and 'LastScan' in changed:
+            print('scan complete, updating networks')
             self._update_networks()
 
         # Device state changes
@@ -312,6 +313,7 @@ class WifiManager:
     while not self._exit:
       if self._active:
         if time.monotonic() - self._last_network_scan > SCAN_PERIOD_SECONDS:
+          print('requesting scan!')
           self._request_scan()
           self._last_network_scan = time.monotonic()
       time.sleep(1 / 2.)

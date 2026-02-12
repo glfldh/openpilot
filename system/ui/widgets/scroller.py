@@ -134,7 +134,7 @@ class Scroller(Widget):
 
   def add_widget(self, item: Widget) -> None:
     self._items.append(item)
-    item.set_touch_valid_callback(lambda: self.scroll_panel.is_touch_valid() and self.enabled)
+    item.set_touch_valid_callback(lambda: self.scroll_panel.is_touch_valid() and self.enabled and self._scrolling_to is None)
 
   def set_scrolling_enabled(self, enabled: bool | Callable[[], bool]) -> None:
     """Set whether scrolling is enabled (does not affect widget enabled state)."""
@@ -267,7 +267,7 @@ class Scroller(Widget):
       item.set_parent_rect(self._rect)
 
   def _render(self, _):
-    for item in self._visible_items:
+    for item in reversed(self._visible_items):
       # Skip rendering if not in viewport
       if not rl.check_collision_recs(item.rect, self._rect):
         continue

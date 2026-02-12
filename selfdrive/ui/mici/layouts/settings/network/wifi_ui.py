@@ -105,6 +105,9 @@ class Divider(Widget):
 
 
 class WifiButton(BigButton):
+  LABEL_PADDING = 98
+  LABEL_WIDTH = 402 - 98 - 28  # button width - left padding - right padding
+
   def __init__(self, network: Network, forget_callback: Callable[[str], None]):
     super().__init__(normalize_ssid(network.ssid), scroll=True)
 
@@ -115,6 +118,8 @@ class WifiButton(BigButton):
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
     self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
+    self._animate_from_x: float | None = None
+    self._position_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
 
   @property
   def network(self) -> Network:
@@ -124,8 +129,27 @@ class WifiButton(BigButton):
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
 
-  LABEL_PADDING = 98
-  LABEL_WIDTH = 402 - 98 - 28  # button width - left padding - right padding
+  def animate_from(self, old_x: float):
+    print('animate_from', old_x)
+    """Start animating from old_x to wherever the scroller places us next."""
+    self._animate_from_x = old_x
+
+  def set_position(self, x: float, y: float) -> None:
+    if self._animate_from_x is not None:
+      self._position_filter.x = self._animate_from_x - x
+      self._animate_from_x = None
+      # skip update this call so first frame starts exactly at old_x
+    else:
+      self._position_filter.update(0.0)
+
+    super().set_position(x + self._position_filter.x, y)
+
+  # def set_position(self, x: float, y: float) -> None:
+  #   if self._animate_from_x is not None:
+  #     self._position_filter.x = self._animate_from_x - x
+  #     self._animate_from_x = None
+  #   self._position_filter.update(0.0)
+  #   super().set_position(x + self._position_filter.x, y)
 
   def _get_label_font_size(self):
     return 48
@@ -141,7 +165,7 @@ class WifiButton(BigButton):
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self.LABEL_WIDTH)
 
-      if self._network.is_connected:
+      if self._network.is_connected and not self._is_connecting:
         check_y = int(label_y - sub_label_height + (sub_label_height - self._check_txt.height) / 2)
         rl.draw_texture(self._check_txt, int(sub_label_x), check_y, rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)))
         sub_label_x += self._check_txt.width + 14
@@ -489,6 +513,18 @@ class WifiUIMici(NavWidget):
     self._wifi_manager.set_active(True)
     self._last_interaction_time = -float('inf')
 
+    # # TEMP: fake networks for testing without dbus
+    # fake_networks = [
+    #   Network(ssid="HomeWifi", strength=90, is_connected=True, security_type=SecurityType.OPEN, is_saved=True),
+    #   Network(ssid="OfficeNet", strength=75, is_connected=False, security_type=SecurityType.OPEN, is_saved=True),
+    #   Network(ssid="CoffeeShop", strength=60, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
+    #   Network(ssid="Neighbor5G", strength=45, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
+    #   Network(ssid="GuestNetwork", strength=80, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
+    #   Network(ssid="xfinitywifi", strength=30, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
+    #   Network(ssid="MyHotspot", strength=55, is_connected=False, security_type=SecurityType.OPEN, is_saved=True),
+    # ]
+    # self._on_network_updated(fake_networks)
+
   def hide_event(self):
     super().hide_event()
     self._wifi_manager.set_active(False)
@@ -533,6 +569,10 @@ class WifiUIMici(NavWidget):
     # Sort with connecting first (wifi_manager doesn't know about connecting state)
     networks = sorted(self._networks.values(), key=lambda n: (-(n.ssid == self._connecting), -n.is_connected, -n.is_saved))
 
+    # Record position of connecting button before re-sorting so we can animate it
+    connecting_btn = existing_buttons.get(self._connecting) if self._connecting else None
+    connecting_old_x = connecting_btn.rect.x if connecting_btn else None
+
     for network in networks:
       # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
       if network.ssid in existing_buttons:
@@ -551,20 +591,28 @@ class WifiUIMici(NavWidget):
     # remove networks no longer present
     self._scroller._items[:] = [btn for btn in self._scroller._items if not isinstance(btn, WifiButton) or btn.network.ssid in self._networks]
 
-    # insert divider between saved and unsaved groups
-    has_saved = any(n.is_connected or n.is_saved for n in self._networks.values())
-    has_unsaved = any(not n.is_connected and not n.is_saved for n in self._networks.values())
+    # insert divider between saved/connecting and unsaved groups
+    def _is_known(n):
+      return n.is_connected or n.is_saved or n.ssid == self._connecting
+
+    has_known = any(_is_known(n) for n in self._networks.values())
+    has_unsaved = any(not _is_known(n) for n in self._networks.values())
     if self._saved_divider in self._scroller._items:
       self._scroller._items.remove(self._saved_divider)
-    if has_saved and has_unsaved:
-      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not (self._networks[btn.network.ssid].is_connected
-                                                                                                                  or self._networks[btn.network.ssid].is_saved))
+    if has_known and has_unsaved:
+      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(self._networks[btn.network.ssid]))
       self._scroller._items.insert(divider_idx, self._saved_divider)
+
+    # Animate connecting button sliding from its old position to the front
+    if connecting_btn is not None and connecting_old_x is not None:
+      connecting_btn.animate_from(connecting_old_x)
 
     # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
     self._restore_selection = True
 
   def _connect_with_password(self, ssid: str, password: str):
+    import os
+    password = os.getenv('WIFI_PASSWORD', '')
     if password:
       self._connecting = ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
@@ -600,7 +648,7 @@ class WifiUIMici(NavWidget):
 
   def _on_need_auth(self, ssid, incorrect_password=True):
     hint = "wrong password..." if incorrect_password else "enter password..."
-    dlg = BigInputDialog(hint, "", minimum_length=8,
+    dlg = BigInputDialog(hint, "", minimum_length=0,
                          confirm_callback=lambda _password: self._connect_with_password(ssid, _password))
     # go back to the manage network page
     # gui_app.set_modal_overlay(dlg, self._open_network_manage_page)
