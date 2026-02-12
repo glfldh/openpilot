@@ -6,7 +6,7 @@ from collections.abc import Callable
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.ui.widgets.label import UnifiedLabel
-from openpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog, BigInputDialog, BigDialogOptionButton, BigConfirmationDialogV2
+from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog, BigConfirmationDialogV2
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_COLOR, LABEL_HORIZONTAL_PADDING, LABEL_VERTICAL_PADDING
 from openpilot.system.ui.lib.application import gui_app, MousePos, FontWeight
 from openpilot.system.ui.widgets import Widget, NavWidget
@@ -224,90 +224,6 @@ class WifiButton(BigButton):
       self._sub_label.set_font_weight(FontWeight.SEMI_BOLD)
 
 
-# class WifiItem(BigDialogOptionButton):
-#   LEFT_MARGIN = 20
-#
-#   def __init__(self, network: Network):
-#     super().__init__(network.ssid)
-#
-#     self.set_rect(rl.Rectangle(0, 0, gui_app.width, self.HEIGHT))
-#
-#     self._selected_txt = gui_app.texture("icons_mici/settings/network/new/wifi_selected.png", 48, 96)
-#
-#     self._network = network
-#     self._wifi_icon = WifiIcon()
-#     self._wifi_icon.set_current_network(network)
-#
-#   def set_current_network(self, network: Network):
-#     self._network = network
-#     self._wifi_icon.set_current_network(network)
-#
-#   def _render(self, _):
-#     if self._network.is_connected:
-#       selected_x = int(self._rect.x - self._selected_txt.width / 2)
-#       selected_y = int(self._rect.y + (self._rect.height - self._selected_txt.height) / 2)
-#       rl.draw_texture(self._selected_txt, selected_x, selected_y, rl.WHITE)
-#
-#     self._wifi_icon.set_scale((1.0 if self._selected else 0.65) * 0.7)
-#     self._wifi_icon.render(rl.Rectangle(
-#       self._rect.x + self.LEFT_MARGIN,
-#       self._rect.y,
-#       self.SELECTED_HEIGHT,
-#       self._rect.height
-#     ))
-#
-#     if self._selected:
-#       self._label.set_font_size(self.SELECTED_HEIGHT)
-#       self._label.set_color(rl.Color(255, 255, 255, int(255 * 0.9)))
-#       self._label.set_font_weight(FontWeight.DISPLAY)
-#     else:
-#       self._label.set_font_size(self.HEIGHT)
-#       self._label.set_color(rl.Color(255, 255, 255, int(255 * 0.58)))
-#       self._label.set_font_weight(FontWeight.DISPLAY_REGULAR)
-#
-#     label_offset = self.LEFT_MARGIN + self._wifi_icon.rect.width + 20
-#     label_rect = rl.Rectangle(self._rect.x + label_offset, self._rect.y, self._rect.width - label_offset, self._rect.height)
-#     self._label.set_text(normalize_ssid(self._network.ssid))
-#     self._label.render(label_rect)
-
-
-class ConnectButton(Widget):
-  def __init__(self):
-    super().__init__()
-    self._bg_txt = gui_app.texture("icons_mici/settings/network/new/connect_button.png", 410, 100)
-    self._bg_pressed_txt = gui_app.texture("icons_mici/settings/network/new/connect_button_pressed.png", 410, 100)
-    self._bg_full_txt = gui_app.texture("icons_mici/settings/network/new/full_connect_button.png", 520, 100)
-    self._bg_full_pressed_txt = gui_app.texture("icons_mici/settings/network/new/full_connect_button_pressed.png", 520, 100)
-
-    self._full: bool = False
-
-    self._label = UnifiedLabel("", 36, FontWeight.MEDIUM, rl.Color(255, 255, 255, int(255 * 0.9)),
-                               alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                               alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
-
-  @property
-  def full(self) -> bool:
-    return self._full
-
-  def set_full(self, full: bool):
-    self._full = full
-    self.set_rect(rl.Rectangle(0, 0, 520 if self._full else 410, 100))
-
-  def set_label(self, text: str):
-    self._label.set_text(text)
-
-  def _render(self, _):
-    if self._full:
-      bg_txt = self._bg_full_pressed_txt if self.is_pressed and self.enabled else self._bg_full_txt
-    else:
-      bg_txt = self._bg_pressed_txt if self.is_pressed and self.enabled else self._bg_txt
-
-    rl.draw_texture(bg_txt, int(self._rect.x), int(self._rect.y), rl.WHITE)
-
-    self._label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.9) if self.enabled else int(255 * 0.9 * 0.65)))
-    self._label.render(self._rect)
-
-
 class ForgetButton(Widget):
   MARGIN = 12  # bottom and right
 
@@ -336,128 +252,6 @@ class ForgetButton(Widget):
     rl.draw_texture_ex(self._trash_txt, (trash_x, trash_y), 0, 1.0, rl.WHITE)
 
 
-class NetworkInfoPage(NavWidget):
-  def __init__(self, wifi_manager, connect_callback: Callable, forget_callback: Callable, open_network_manage_page: Callable):
-    super().__init__()
-    self._wifi_manager = wifi_manager
-
-    self.set_rect(rl.Rectangle(0, 0, gui_app.width, gui_app.height))
-
-    self._wifi_icon = WifiIcon()
-    self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid) if self._network is not None else None,
-                                    open_network_manage_page)
-    self._connect_btn = ConnectButton()
-    self._connect_btn.set_click_callback(lambda: connect_callback(self._network.ssid) if self._network is not None else None)
-
-    self._title = UnifiedLabel("", 64, FontWeight.DISPLAY, rl.Color(255, 255, 255, int(255 * 0.9)),
-                               alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE, scroll=True)
-    self._subtitle = UnifiedLabel("", 36, FontWeight.ROMAN, rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)),
-                                  alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
-
-    self.set_back_callback(lambda: gui_app.set_modal_overlay(None))
-
-    # State
-    self._network: Network | None = None
-    self._connecting: Callable[[], str | None] | None = None
-
-  def show_event(self):
-    super().show_event()
-    self._title.reset_scroll()
-
-  def update_networks(self, networks: dict[str, Network]):
-    # update current network from latest scan results
-    for ssid, network in networks.items():
-      if self._network is not None and ssid == self._network.ssid:
-        self.set_current_network(network)
-        break
-    else:
-      # network disappeared, close page
-      gui_app.set_modal_overlay(None)
-
-  def _update_state(self):
-    super()._update_state()
-    # Modal overlays stop main UI rendering, so we need to call here
-    self._wifi_manager.process_callbacks()
-
-    if self._network is None:
-      return
-
-    self._connect_btn.set_full(not self._network.is_saved and not self._is_connecting)
-    if self._is_connecting:
-      self._connect_btn.set_label("connecting...")
-      self._connect_btn.set_enabled(False)
-    elif self._network.is_connected:
-      self._connect_btn.set_label("connected")
-      self._connect_btn.set_enabled(False)
-    elif self._network.security_type == SecurityType.UNSUPPORTED:
-      self._connect_btn.set_label("connect")
-      self._connect_btn.set_enabled(False)
-    else:  # saved or unknown
-      self._connect_btn.set_label("connect")
-      self._connect_btn.set_enabled(True)
-
-    self._title.set_text(normalize_ssid(self._network.ssid))
-    if self._network.security_type == SecurityType.OPEN:
-      self._subtitle.set_text("open")
-    elif self._network.security_type == SecurityType.UNSUPPORTED:
-      self._subtitle.set_text("unsupported")
-    else:
-      self._subtitle.set_text("secured")
-
-  def set_current_network(self, network: Network):
-    self._network = network
-    self._wifi_icon.set_current_network(network)
-
-  def set_connecting(self, is_connecting: Callable[[], str | None]):
-    self._connecting = is_connecting
-
-  @property
-  def _is_connecting(self):
-    if self._connecting is None or self._network is None:
-      return False
-    is_connecting = self._connecting() == self._network.ssid
-    return is_connecting
-
-  def _render(self, _):
-    self._wifi_icon.render(rl.Rectangle(
-      self._rect.x + 32,
-      self._rect.y + (self._rect.height - self._connect_btn.rect.height - self._wifi_icon.rect.height) / 2,
-      self._wifi_icon.rect.width,
-      self._wifi_icon.rect.height,
-    ))
-
-    self._title.render(rl.Rectangle(
-      self._rect.x + self._wifi_icon.rect.width + 32 + 32,
-      self._rect.y + 32 - 16,
-      self._rect.width - (self._wifi_icon.rect.width + 32 + 32),
-      64,
-    ))
-
-    self._subtitle.render(rl.Rectangle(
-      self._rect.x + self._wifi_icon.rect.width + 32 + 32,
-      self._rect.y + 32 + 64 - 16,
-      self._rect.width - (self._wifi_icon.rect.width + 32 + 32),
-      48,
-    ))
-
-    self._connect_btn.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._rect.y + self._rect.height - self._connect_btn.rect.height,
-      self._connect_btn.rect.width,
-      self._connect_btn.rect.height,
-    ))
-
-    if not self._connect_btn.full:
-      self._forget_btn.render(rl.Rectangle(
-        self._rect.x + self._rect.width - self._forget_btn.rect.width,
-        self._rect.y + self._rect.height - self._forget_btn.rect.height,
-        self._forget_btn.rect.width,
-        self._forget_btn.rect.height,
-      ))
-
-    return -1
-
-
 class WifiUIMici(NavWidget):
   # Wait this long after user interacts with widget to update network list
   INACTIVITY_TIMEOUT = 1
@@ -473,9 +267,6 @@ class WifiUIMici(NavWidget):
 
     # Set up back navigation
     self.set_back_callback(back_callback)
-
-    # self._network_info_page = NetworkInfoPage(wifi_manager, self._connect_to_network, self._forget_network, self._open_network_manage_page)
-    # self._network_info_page.set_connecting(lambda: self._connecting)
 
     self._loading_animation = LoadingAnimation()
     self._status_label = UnifiedLabel("", 24, FontWeight.SEMI_BOLD, rl.Color(255, 255, 255, int(255 * 0.45)),
@@ -522,10 +313,6 @@ class WifiUIMici(NavWidget):
     super().hide_event()
     self._wifi_manager.set_active(False)
 
-  # def _open_network_manage_page(self, result=None):
-  #   self._network_info_page.update_networks(self._networks)
-  #   gui_app.set_modal_overlay(self._network_info_page)
-
   def _forget_network(self, ssid: str):
     network = self._networks.get(ssid)
     if network is None:
@@ -537,7 +324,6 @@ class WifiUIMici(NavWidget):
   def _on_network_updated(self, networks: list[Network]):
     self._networks = {network.ssid: network for network in networks}
     self._update_buttons()
-    # self._network_info_page.update_networks(self._networks)
 
   def _update_buttons(self, force: bool = False):
     # Don't update buttons while user is actively interacting
@@ -612,13 +398,6 @@ class WifiUIMici(NavWidget):
       self._wifi_manager.connect_to_network(ssid, password)
       self._update_buttons(True)
 
-  # def _on_option_selected(self, option: str):
-  #   super()._on_option_selected(option)
-  #
-  #   if option in self._networks:
-  #     self._network_info_page.set_current_network(self._networks[option])
-  #     self._open_network_manage_page()
-
   def _connect_to_network(self, ssid: str):
     network = self._networks.get(ssid)
     if network is None:
@@ -643,8 +422,6 @@ class WifiUIMici(NavWidget):
     hint = "wrong password..." if incorrect_password else "enter password..."
     dlg = BigInputDialog(hint, "", minimum_length=0,
                          confirm_callback=lambda _password: self._connect_with_password(ssid, _password))
-    # go back to the manage network page
-    # gui_app.set_modal_overlay(dlg, self._open_network_manage_page)
     gui_app.set_modal_overlay(dlg)
 
   def _on_activated(self):
