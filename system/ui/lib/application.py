@@ -588,11 +588,11 @@ class GuiApplication:
           if len(widgets_to_render) == 2:
             bg_widget, fg_widget = widgets_to_render
 
-            # Scale background down by 10% as the foreground widget slides in.
+            # Scale background down by 5% as the foreground widget slides in.
             # fg_rect.y goes from screen height (off-screen) to 0 (fully visible),
-            # so progress goes from 0.0 to 1.0, and scale goes from 1.0 to 0.9.
+            # so progress goes from 0.0 to 1.0, and scale goes from 1.0 to 0.95.
             fg_progress = max(0.0, min(1.0, 1.0 - fg_widget.rect.y / self.height)) if self.height > 0 else 0.0
-            bg_scale = 1.0 - 0.1 * fg_progress
+            bg_scale = 1.0 - 0.05 * fg_progress
 
             camera = rl.Camera2D(
               rl.Vector2(self.width / 2, self.height / 2),  # offset (screen center)
