@@ -24,7 +24,7 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 ACCEL_CLIP_JERK_MAX = 1.0
 
 K_CRUISE = 0.27
-TAU_CRUISE = 1.0
+TAU_CRUISE = 0.7
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
