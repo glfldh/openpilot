@@ -322,8 +322,8 @@ class Tici(HardwareBase):
 
   def shutdown(self):
     if self.get_device_type() == "mici":
-      self.set_ship_mode()  # arms BATFET reversal, engaged on PS_HOLD release
-      gpio_set(GPIO.SOM_ST_IO, 0)  # stop fan
+      self.set_ship_mode()  # switch off VPH_PWR
+      gpio_set(GPIO.SOM_ST_IO, 0)  # stop fan for ship mode
     os.system("sudo poweroff")
 
   def get_thermal_config(self):
