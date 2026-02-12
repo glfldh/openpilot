@@ -583,9 +583,32 @@ class GuiApplication:
 
         if self._new_modal:
           # Only render top two
-          for widget in self._nav_stack.widgets[-2:]:
-            # TODO: need scaled sizes?
-            widget.render(rl.Rectangle(0, 0, self.width, self.height))
+          widgets_to_render = self._nav_stack.widgets[-2:]
+
+          if len(widgets_to_render) == 2:
+            bg_widget, fg_widget = widgets_to_render
+
+            # Scale background down by 10% as the foreground widget slides in.
+            # fg_rect.y goes from screen height (off-screen) to 0 (fully visible),
+            # so progress goes from 0.0 to 1.0, and scale goes from 1.0 to 0.9.
+            fg_progress = max(0.0, min(1.0, 1.0 - fg_widget.rect.y / self.height)) if self.height > 0 else 0.0
+            bg_scale = 1.0 - 0.1 * fg_progress
+
+            camera = rl.Camera2D(
+              rl.Vector2(self.width / 2, self.height / 2),  # offset (screen center)
+              rl.Vector2(self.width / 2, self.height / 2),  # target (world center)
+              0.0,       # rotation
+              bg_scale,  # zoom
+            )
+            rl.begin_mode_2d(camera)
+            bg_widget.render(rl.Rectangle(0, 0, self.width, self.height))
+            rl.end_mode_2d()
+
+            # Render foreground widget normally on top
+            fg_widget.render(rl.Rectangle(0, 0, self.width, self.height))
+          else:
+            for widget in widgets_to_render:
+              widget.render(rl.Rectangle(0, 0, self.width, self.height))
 
           print('widget stack', len(self._nav_stack.widgets), [w.__class__.__name__ for w in self._nav_stack.widgets])
 
