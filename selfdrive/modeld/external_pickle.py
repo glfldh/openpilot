@@ -1,4 +1,5 @@
-import hashlib, pickle
+import hashlib
+import pickle
 from pathlib import Path
 
 def dump_external_pickle(obj, path, chunk=45*1024*1024):
