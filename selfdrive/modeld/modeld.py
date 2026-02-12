@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 import os
-from pathlib import Path
 from openpilot.system.hardware import TICI
 os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
-
 USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
-
 from tinygrad.tensor import Tensor
 import time
 import pickle
 import numpy as np
 import cereal.messaging as messaging
 from cereal import car, log
+from pathlib import Path
 from cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
@@ -37,7 +35,6 @@ SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_vision_tinygrad.pkl'
 POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_policy_tinygrad.pkl'
-
 VISION_METADATA_PATH = Path(__file__).parent / 'models/driving_vision_metadata.pkl'
 POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.pkl'
 MODELS_DIR = Path(__file__).parent / 'models'
