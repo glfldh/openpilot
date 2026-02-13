@@ -103,6 +103,7 @@ class WifiButton(BigButton):
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
+    self._forget_btn_was_pressed = False
     self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
 
   @property
@@ -112,6 +113,14 @@ class WifiButton(BigButton):
   @property
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
+
+  def _handle_mouse_press(self, mouse_pos: MousePos):
+    super()._handle_mouse_press(mouse_pos)
+    self._forget_btn_was_pressed = self._forget_btn.is_pressed
+
+  def _handle_mouse_release(self, mouse_pos: MousePos):
+    if not self._forget_btn_was_pressed:
+      super()._handle_mouse_release(mouse_pos)
 
   def _get_label_font_size(self):
     return 48
