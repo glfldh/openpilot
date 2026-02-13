@@ -339,10 +339,8 @@ class WifiUIMici(NavWidget):
 
   def _update_buttons(self):
     existing = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
-    is_known = lambda n: n.is_connected or n.is_saved or n.ssid == self._connecting
 
-    # Update existing buttons, add new ones in the correct section
-    num_known_inserted = 0
+    # Update existing buttons, add new ones to the end
     for network in self._networks.values():
       if network.ssid in existing:
         existing[network.ssid].set_current_network(network)
@@ -350,29 +348,14 @@ class WifiUIMici(NavWidget):
         btn = WifiButton(network, self._forget_network)
         btn.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
         btn.set_connecting(lambda: self._connecting)
-
-        if is_known(network):
-          # Insert before first unknown button so it appears in the saved section
-          insert_idx = next((i for i, b in enumerate(self._scroller._items)
-                             if isinstance(b, WifiButton) and not is_known(b.network)), len(self._scroller._items))
-          self._scroller.add_widget(btn)
-          self._scroller._items.pop()
-          self._scroller._items.insert(insert_idx, btn)
-          num_known_inserted += 1
-        else:
-          self._scroller.add_widget(btn)
-
-    # Compensate scroll offset so visible items don't jump when buttons are inserted before them
-    if num_known_inserted > 0:
-      offset = num_known_inserted * (btn.rect.width + self._scroller._spacing)
-      self._scroller.scroll_panel.set_offset(self._scroller.scroll_panel.get_offset() - offset)
+        self._scroller.add_widget(btn)
 
     # Mark networks no longer in scan results (display handled by _update_state)
     for btn in self._scroller._items:
       if isinstance(btn, WifiButton) and btn.network.ssid not in self._networks:
         btn.set_network_missing(True)
 
-    # Move connecting/connected network to the front with animation (prefer connecting over connected)
+    # Move connecting/connected network to the front with animation
     front_btn_idx = next((i for i, btn in enumerate(self._scroller._items)
                           if isinstance(btn, WifiButton) and not btn._network_missing
                           and (btn.network.ssid == self._connecting or
@@ -384,14 +367,15 @@ class WifiUIMici(NavWidget):
       self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
       btn.animate_from(old_x)
 
-    # Insert divider between known (saved/connecting/connected) and unknown groups
-    if self._saved_divider in self._scroller._items:
-      self._scroller._items.remove(self._saved_divider)
-
-    if any(is_known(n) for n in self._networks.values()) and any(not is_known(n) for n in self._networks.values()):
-      divider_idx = next(i for i, btn in enumerate(self._scroller._items)
-                         if isinstance(btn, WifiButton) and not is_known(btn.network))
-      self._scroller._items.insert(divider_idx, self._saved_divider)
+    # # Insert divider between known (saved/connecting/connected) and unknown groups
+    # if self._saved_divider in self._scroller._items:
+    #   self._scroller._items.remove(self._saved_divider)
+    #
+    # is_known = lambda n: n.is_connected or n.is_saved or n.ssid == self._connecting
+    # if any(is_known(n) for n in self._networks.values()) and any(not is_known(n) for n in self._networks.values()):
+    #   divider_idx = next(i for i, btn in enumerate(self._scroller._items)
+    #                      if isinstance(btn, WifiButton) and not is_known(btn.network))
+    #   self._scroller._items.insert(divider_idx, self._saved_divider)
 
   def _connect_with_password(self, ssid: str, password: str):
     import os
