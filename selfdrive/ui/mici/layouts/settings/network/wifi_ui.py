@@ -296,8 +296,6 @@ class WifiUIMici(NavWidget):
       self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
 
   def _connect_with_password(self, ssid: str, password: str):
-    import os
-    password = os.getenv('WIFI_PASSWORD', password)
     if password:
       self._connecting = ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
@@ -325,7 +323,7 @@ class WifiUIMici(NavWidget):
 
   def _on_need_auth(self, ssid, incorrect_password=True):
     hint = "wrong password..." if incorrect_password else "enter password..."
-    dlg = BigInputDialog(hint, "", minimum_length=0,
+    dlg = BigInputDialog(hint, "", minimum_length=8,
                          confirm_callback=lambda _password: self._connect_with_password(ssid, _password))
     gui_app.set_modal_overlay(dlg)
 
