@@ -356,10 +356,15 @@ class WifiUIMici(NavWidget):
       if isinstance(btn, WifiButton) and btn.network.ssid not in self._networks:
         btn.set_network_missing(True)
 
-    # Move connecting/connected network to the front with animation
+    # Move connecting/connected network to the front with animation (prefer connecting over connected)
     front_btn_idx = next((i for i, btn in enumerate(self._scroller._items)
-                          if isinstance(btn, WifiButton) and not btn._network_missing and
-                          (btn.network.ssid == self._connecting or btn.network.is_connected)), None)
+                          if isinstance(btn, WifiButton) and not btn._network_missing
+                          and btn.network.ssid == self._connecting), None)
+    if front_btn_idx is None:
+      front_btn_idx = next((i for i, btn in enumerate(self._scroller._items)
+                            if isinstance(btn, WifiButton) and not btn._network_missing
+                            and btn.network.is_connected), None)
+
     if front_btn_idx is not None and front_btn_idx > 0:
       btn = self._scroller._items[front_btn_idx]
       old_x = btn.rect.x
@@ -368,8 +373,10 @@ class WifiUIMici(NavWidget):
 
     # Insert divider between known (saved/connecting/connected) and unknown groups
     is_known = lambda n: n.is_connected or n.is_saved or n.ssid == self._connecting
+
     if self._saved_divider in self._scroller._items:
       self._scroller._items.remove(self._saved_divider)
+
     if any(is_known(n) for n in self._networks.values()) and any(not is_known(n) for n in self._networks.values()):
       divider_idx = next(i for i, btn in enumerate(self._scroller._items)
                          if isinstance(btn, WifiButton) and not is_known(btn.network))
