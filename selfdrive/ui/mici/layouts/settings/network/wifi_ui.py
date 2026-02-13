@@ -371,9 +371,13 @@ class WifiUIMici(NavWidget):
       self._connecting = None
 
     # For eager UI forget
-    for btn in self._scroller._items:
+    for i, btn in enumerate(self._scroller._items):
       if isinstance(btn, WifiButton) and btn.network.ssid == ssid:
         btn.on_forgotten()
+        # Move after the last saved network
+        last_saved_idx = max((j for j, b in enumerate(self._scroller._items)
+                              if isinstance(b, WifiButton) and b.network.is_saved and not b._network_forgot), default=-1)
+        self._scroller._items.insert(last_saved_idx + 1, self._scroller._items.pop(i))
         break
 
   def _on_disconnected(self):
