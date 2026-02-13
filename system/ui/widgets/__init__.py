@@ -116,6 +116,7 @@ class Widget(abc.ABC):
   def _process_mouse_events(self) -> None:
     hit_rect = self._hit_rect
     touch_valid = self._touch_valid()
+    cls = type(self).__name__
 
     for mouse_event in gui_app.mouse_events:
       if not self._multi_touch and mouse_event.slot != 0:
@@ -126,6 +127,7 @@ class Widget(abc.ABC):
       # Allows touch to leave the rect and come back in focus if mouse did not release
       if mouse_event.left_pressed and touch_valid:
         if mouse_in_rect:
+          print(f"[PRESS] {cls} slot={mouse_event.slot} pos=({mouse_event.pos.x:.0f},{mouse_event.pos.y:.0f}) touch_valid={touch_valid}")
           self._handle_mouse_press(mouse_event.pos)
           self.__is_pressed[mouse_event.slot] = True
           self.__tracking_is_pressed[mouse_event.slot] = True
@@ -133,13 +135,18 @@ class Widget(abc.ABC):
 
       # Callback such as scroll panel signifies user is scrolling
       elif not touch_valid:
+        if self.__is_pressed[mouse_event.slot]:
+          print(f"[INVALID] {cls} slot={mouse_event.slot} clearing pressed (touch_valid=False)")
         self.__is_pressed[mouse_event.slot] = False
         self.__tracking_is_pressed[mouse_event.slot] = False
 
       elif mouse_event.left_released:
         self._handle_mouse_event(mouse_event)
         if self.__is_pressed[mouse_event.slot] and mouse_in_rect:
+          print(f"[RELEASE+CLICK] {cls} slot={mouse_event.slot} pos=({mouse_event.pos.x:.0f},{mouse_event.pos.y:.0f})")
           self._handle_mouse_release(mouse_event.pos)
+        elif self.__is_pressed[mouse_event.slot]:
+          print(f"[RELEASE outside] {cls} slot={mouse_event.slot} pos=({mouse_event.pos.x:.0f},{mouse_event.pos.y:.0f}) mouse_in_rect={mouse_in_rect}")
         self.__is_pressed[mouse_event.slot] = False
         self.__tracking_is_pressed[mouse_event.slot] = False
 
