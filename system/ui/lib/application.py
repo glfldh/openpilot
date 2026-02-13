@@ -507,6 +507,13 @@ class GuiApplication:
 
         # Store all mouse events for the current frame
         self._mouse_events = self._mouse.get_events()
+        # DEBUG: simulate touch behavior where press+release arrive in same frame
+        patched = []
+        for ev in self._mouse_events:
+          patched.append(ev)
+          if ev.left_pressed and os.path.exists("/tmp/simulate_touch_release"):
+            patched.append(MouseEvent(ev.pos, ev.slot, False, True, False, ev.t))
+        self._mouse_events = patched
         if len(self._mouse_events) > 0:
           self._last_mouse_event = self._mouse_events[-1]
 

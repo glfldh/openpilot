@@ -127,6 +127,11 @@ class WifiButton(BigButton):
   def network(self) -> Network:
     return self._network
 
+  def _handle_mouse_release(self, mouse_pos: MousePos):
+    if rl.check_collision_point_rec(mouse_pos, self._forget_btn.rect):
+      return
+    super()._handle_mouse_release(mouse_pos)
+
   def _get_label_font_size(self):
     return 48
 
