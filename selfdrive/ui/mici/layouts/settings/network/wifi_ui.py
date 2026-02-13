@@ -93,13 +93,13 @@ class WifiButton(BigButton):
   LABEL_PADDING = 98
   LABEL_WIDTH = 402 - 98 - 28  # button width - left padding - right padding
 
-  def __init__(self, network: Network, forget_callback: Callable[[str], None]):
+  def __init__(self, network: Network, forget_callback: Callable[[str], None], connecting_callback: Callable[[], str | None]):
     super().__init__(normalize_ssid(network.ssid), scroll=True)
 
     # State
     self._network = network
     self._network_missing = False
-    self._connecting: Callable[[], str | None] | None = None
+    self._connecting_callback = connecting_callback
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
@@ -138,8 +138,8 @@ class WifiButton(BigButton):
     # Wifi icon
     self._wifi_icon.set_opacity(0.35 if self._network_missing else 1.0)
     self._wifi_icon.render(rl.Rectangle(
-      self._rect.x,
-      btn_y + 23,
+      self._rect.x + 5,
+      btn_y + 15,
       self._wifi_icon.rect.width,
       self._wifi_icon.rect.height,
     ))
@@ -167,15 +167,9 @@ class WifiButton(BigButton):
     self._network_missing = missing
     self._wifi_icon.set_network_missing(missing)
 
-  def set_connecting(self, is_connecting: Callable[[], str | None]):
-    self._connecting = is_connecting
-
   @property
   def _is_connecting(self):
-    # TODO: make this passed in so it's never none
-    if self._connecting is None:
-      return False
-    is_connecting = self._connecting() == self._network.ssid
+    is_connecting = self._connecting_callback() == self._network.ssid
     return is_connecting
 
   def _update_state(self):
@@ -283,9 +277,8 @@ class WifiUIMici(NavWidget):
       if network.ssid in existing:
         existing[network.ssid].set_current_network(network)
       else:
-        btn = WifiButton(network, self._forget_network)
+        btn = WifiButton(network, self._forget_network, lambda: self._connecting)
         btn.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
-        btn.set_connecting(lambda: self._connecting)
         self._scroller.add_widget(btn)
 
     # Mark networks no longer in scan results (display handled by _update_state)
