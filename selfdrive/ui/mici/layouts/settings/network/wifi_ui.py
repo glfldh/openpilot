@@ -131,8 +131,6 @@ class WifiButton(BigButton):
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
     self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
-    self._animate_from_x: float | None = None
-    self._position_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
 
   @property
   def network(self) -> Network:
@@ -141,21 +139,6 @@ class WifiButton(BigButton):
   @property
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
-
-  def animate_from(self, old_x: float):
-    print('animate_from', old_x)
-    """Start animating from old_x to wherever the scroller places us next."""
-    self._animate_from_x = old_x
-
-  def set_position(self, x: float, y: float) -> None:
-    if self._animate_from_x is not None:
-      self._position_filter.x = self._animate_from_x - x
-      self._animate_from_x = None
-      # skip update this call so first frame starts exactly at old_x
-    else:
-      self._position_filter.update(0.0)
-
-    super().set_position(x + self._position_filter.x, y)
 
   def _get_label_font_size(self):
     return 48
@@ -362,10 +345,7 @@ class WifiUIMici(NavWidget):
                                (not self._connecting and btn.network.is_connected))), None)
 
     if front_btn_idx is not None and front_btn_idx > 0:
-      btn = self._scroller._items[front_btn_idx]
-      old_x = btn.rect.x
       self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
-      btn.animate_from(old_x)
 
     # # Insert divider between known (saved/connecting/connected) and unknown groups
     # if self._saved_divider in self._scroller._items:
