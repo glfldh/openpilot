@@ -134,6 +134,11 @@ class WifiButton(BigButton):
     self._animate_from_x: float | None = None
     self._position_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
 
+    # Connect animation: IDLE -> LIFTING -> SLIDING -> DROPPING -> IDLE
+    self._y_lift_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
+    self._anim_phase = 'idle'  # idle, lifting, sliding, dropping
+    self._on_lift_complete: Callable | None = None
+
   @property
   def network(self) -> Network:
     return self._network
@@ -142,20 +147,51 @@ class WifiButton(BigButton):
   def is_pressed(self) -> bool:
     return super().is_pressed and not self._forget_btn.is_pressed
 
+  def start_connect_animation(self, on_lift_complete: Callable | None = None):
+    """Lift the button up, then call on_lift_complete to trigger scroll+slide."""
+    self._anim_phase = 'lifting'
+    self._on_lift_complete = on_lift_complete
+
   def animate_from(self, old_x: float):
-    print('animate_from', old_x)
     """Start animating from old_x to wherever the scroller places us next."""
     self._animate_from_x = old_x
 
   def set_position(self, x: float, y: float) -> None:
-    if self._animate_from_x is not None:
+    if self._animate_from_x is not None and self._anim_phase != 'lifting':
       self._position_filter.x = self._animate_from_x - x
       self._animate_from_x = None
-      # skip update this call so first frame starts exactly at old_x
-    else:
+    elif self._animate_from_x is None and self._anim_phase != 'lifting':
       self._position_filter.update(0.0)
+    # During lifting: freeze horizontal position
 
     super().set_position(x + self._position_filter.x, y)
+
+  def _render(self, _):
+    # Advance animation phases
+    if self._anim_phase == 'lifting':
+      self._y_lift_filter.update(-20.0)
+      if abs(self._y_lift_filter.x - (-20.0)) < 1:
+        self._anim_phase = 'sliding'
+        if self._on_lift_complete:
+          self._on_lift_complete()
+          self._on_lift_complete = None
+    elif self._anim_phase == 'sliding':
+      self._y_lift_filter.update(-20.0)
+      if abs(self._position_filter.x) < 5:
+        self._anim_phase = 'dropping'
+    elif self._anim_phase == 'dropping':
+      self._y_lift_filter.update(0.0)
+      if abs(self._y_lift_filter.x) < 1:
+        self._y_lift_filter.x = 0.0
+        self._anim_phase = 'idle'
+
+    # Apply visual y offset without affecting layout
+    if self._y_lift_filter.x != 0:
+      self._rect.y += self._y_lift_filter.x
+      super()._render(_)
+      self._rect.y -= self._y_lift_filter.x
+    else:
+      super()._render(_)
 
   def _get_label_font_size(self):
     return 48
@@ -333,6 +369,15 @@ class WifiUIMici(NavWidget):
 
     self._wifi_manager.forget_connection(network.ssid)
 
+    # Optimistic UI: mark as unsaved immediately so forget feels instant
+    unsaved = Network(ssid=network.ssid, strength=network.strength, is_connected=False,
+                      security_type=network.security_type, is_saved=False)
+    self._networks[ssid] = unsaved
+    for btn in self._scroller._items:
+      if isinstance(btn, WifiButton) and btn.network.ssid == ssid:
+        btn.set_current_network(unsaved)
+        break
+
   def _on_network_updated(self, networks: list[Network]):
     self._networks = {network.ssid: network for network in networks}
     self._update_buttons()
@@ -377,14 +422,26 @@ class WifiUIMici(NavWidget):
     #                      if isinstance(btn, WifiButton) and not is_known(btn.network))
     #   self._scroller._items.insert(divider_idx, self._saved_divider)
 
+  def _start_connecting(self, ssid: str):
+    """Start lift animation, then scroll+slide to front after lift completes."""
+    self._connecting = ssid
+    btn = next((b for b in self._scroller._items if isinstance(b, WifiButton) and b.network.ssid == ssid), None)
+
+    def on_lift_complete():
+      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
+      self._update_buttons()
+
+    if btn:
+      btn.start_connect_animation(on_lift_complete=on_lift_complete)
+    else:
+      on_lift_complete()
+
   def _connect_with_password(self, ssid: str, password: str):
     import os
     password = os.getenv('WIFI_PASSWORD', password)
     if password:
-      self._connecting = ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
+      self._start_connecting(ssid)
       self._wifi_manager.connect_to_network(ssid, password)
-      self._update_buttons()
 
   def _connect_to_network(self, ssid: str):
     network = self._networks.get(ssid)
@@ -392,17 +449,12 @@ class WifiUIMici(NavWidget):
       cloudlog.warning(f"Trying to connect to unknown network: {ssid}")
       return
 
-    print('connecting to', ssid, 'saved:', network.is_saved, 'security:', network.security_type)
     if network.is_saved:
-      self._connecting = network.ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
+      self._start_connecting(ssid)
       self._wifi_manager.activate_connection(network.ssid)
-      self._update_buttons()
     elif network.security_type == SecurityType.OPEN:
-      self._connecting = network.ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
+      self._start_connecting(ssid)
       self._wifi_manager.connect_to_network(network.ssid, "")
-      self._update_buttons()
     else:
       self._on_need_auth(network.ssid, False)
 
