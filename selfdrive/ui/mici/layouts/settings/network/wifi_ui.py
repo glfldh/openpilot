@@ -21,7 +21,7 @@ def normalize_ssid(ssid: str) -> str:
 class LoadingAnimation(Widget):
   def __init__(self):
     super().__init__()
-    self._opacity_target = 0.0
+    self._opacity_target = 1.0
     self._opacity_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
 
   def set_opacity(self, opacity: float):
@@ -125,6 +125,7 @@ class WifiButton(BigButton):
 
     # State
     self._network = network
+    self._network_missing = False
     self._connecting: Callable[[], str | None] | None = None
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
@@ -170,7 +171,7 @@ class WifiButton(BigButton):
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self.LABEL_WIDTH)
 
-      if self._network.is_connected and not self._is_connecting:
+      if self._network.is_connected and not self._is_connecting and not self._network_missing:
         check_y = int(label_y - sub_label_height + (sub_label_height - self._check_txt.height) / 2)
         rl.draw_texture(self._check_txt, int(sub_label_x), check_y, rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)))
         sub_label_x += self._check_txt.width + 14
@@ -179,6 +180,7 @@ class WifiButton(BigButton):
       self._sub_label.render(sub_label_rect)
 
     # Wifi icon
+    self._wifi_icon.set_opacity(0.35 if self._network_missing else 1.0)
     wifi_icon_rect = rl.Rectangle(
       self._rect.x,
       btn_y + 23,
@@ -189,7 +191,7 @@ class WifiButton(BigButton):
     # rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
 
     # Forget button
-    if self._network.is_saved or self._is_connecting:
+    if (self._network.is_saved or self._is_connecting) and not self._network_missing:
       self._forget_btn.render(rl.Rectangle(
         self._rect.x + self._rect.width - self._forget_btn.rect.width,
         btn_y + self._rect.height - self._forget_btn.rect.height,
@@ -204,10 +206,11 @@ class WifiButton(BigButton):
   def set_current_network(self, network: Network):
     self._network = network
     self._wifi_icon.set_current_network(network)
-    self.set_enabled(True)
-    self.set_network_missing(False)
+    self._network_missing = False
+    self._wifi_icon.set_network_missing(False)
 
   def set_network_missing(self, missing: bool):
+    self._network_missing = missing
     self._wifi_icon.set_network_missing(missing)
 
   def set_connecting(self, is_connecting: Callable[[], str | None]):
@@ -222,12 +225,14 @@ class WifiButton(BigButton):
     return is_connecting
 
   def _update_state(self):
-    if self._is_connecting or self._network.is_connected or self._network.security_type == SecurityType.UNSUPPORTED:
+    if self._network_missing or self._is_connecting or self._network.is_connected or self._network.security_type == SecurityType.UNSUPPORTED:
       self.set_enabled(False)
       self._sub_label.set_color(rl.Color(255, 255, 255, int(255 * 0.585)))
       self._sub_label.set_font_weight(FontWeight.ROMAN)
 
-      if self._is_connecting:
+      if self._network_missing:
+        self.set_value("not in range")
+      elif self._is_connecting:
         self.set_value("connecting...")
       elif self._network.is_connected:
         self.set_value("connected")
@@ -362,10 +367,10 @@ class WifiUIMici(NavWidget):
         self._scroller.add_widget(network_button)
 
     # Move connected network to the start
-    connected_btn_idx = next((i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and btn.network.is_connected), None)
+    connected_btn_idx = next((i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and btn.network.is_connected and not btn._network_missing), None)
     if connected_btn_idx is not None and connected_btn_idx > 0:
       self._scroller._items.insert(0, self._scroller._items.pop(connected_btn_idx))
-      self._scroller._layout()  # fixes selected style single frame stutter
+      # self._scroller._layout()  # fixes selected style single frame stutter
 
     # insert divider between saved/connecting and unsaved groups
     def _is_known(n):
@@ -375,25 +380,22 @@ class WifiUIMici(NavWidget):
     has_unsaved = any(not _is_known(n) for n in self._networks.values())
     if self._saved_divider in self._scroller._items:
       self._scroller._items.remove(self._saved_divider)
-    # if has_known and has_unsaved:
-    #   divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(self._networks[btn.network.ssid]))
-    #   self._scroller._items.insert(divider_idx, self._saved_divider)
+    if has_known and has_unsaved:
+      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(btn.network))
+      self._scroller._items.insert(divider_idx, self._saved_divider)
 
     # Animate connecting button sliding from its old position to the front
     if connecting_btn is not None and connecting_old_x is not None:
       connecting_btn.animate_from(connecting_old_x)
 
-    # Disable networks no longer present
+    # Mark networks no longer present (display handled by _update_state)
     for btn in self._scroller._items:
-      if not isinstance(btn, WifiButton):
-        continue
-      if btn.text not in self._networks:
-        btn.set_enabled(False)
+      if isinstance(btn, WifiButton) and btn.network.ssid not in self._networks:
         btn.set_network_missing(True)
 
   def _connect_with_password(self, ssid: str, password: str):
     import os
-    password = os.getenv('WIFI_PASSWORD', '')
+    password = os.getenv('WIFI_PASSWORD', password)
     if password:
       self._connecting = ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
