@@ -122,6 +122,41 @@ class WifiButton(BigButton):
     self._network_forgetting = False
     self._network_forgot = False
 
+    # Fade-in overlay: 1.0 = fully hidden (black), 0.0 = fully visible
+    self._fading_out = False
+    self._fade_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
+    self._fade_target = 0.0
+    self._fade_delay_until = 0.0
+
+  def fade_out(self):
+    """Fade to black in current position."""
+    self._fading_out = True
+    self._fade_target = 1.0
+    self._fade_delay_until = 0.0
+
+  @property
+  def _faded_out(self) -> bool:
+    return self._fading_out and self._fade_filter.x > 0.99
+
+  def animate_in(self):
+    """Start fully hidden (black overlay), then fade in after a delay."""
+    self._fading_out = False
+    self._fade_filter.x = 1.0
+    self._fade_target = 0.0
+    self._fade_delay_until = rl.get_time() + 0.5
+
+  def _render(self, rect):
+    super()._render(rect)
+    if rl.get_time() >= self._fade_delay_until:
+      self._fade_filter.update(self._fade_target)
+    if self._fade_filter.x > 0.01:
+      alpha = int(255 * self._fade_filter.x)
+      pad_x = int(self._rect.width * 0.05)
+      pad_y = int(self._rect.height * 0.05)
+      rl.draw_rectangle(int(self._rect.x) - pad_x, int(self._rect.y) - pad_y,
+                         int(self._rect.width) + pad_x * 2, int(self._rect.height) + pad_y * 2,
+                         rl.Color(0, 0, 0, alpha))
+
   def set_current_network(self, network: Network):
     self._network = network
     self._wifi_icon.set_current_network(network)
@@ -323,12 +358,13 @@ class WifiUIMici(NavWidget):
                                (not self._connecting and btn.network.is_connected))), None)
 
     if front_btn_idx is not None and front_btn_idx > 0:
-      self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
+      btn = self._scroller._items[front_btn_idx]
+      if not btn._fading_out:
+        btn.fade_out()
 
   def _connect_with_password(self, ssid: str, password: str):
     if password:
       self._connecting = ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(ssid, password)
       self._update_buttons()
 
@@ -340,12 +376,10 @@ class WifiUIMici(NavWidget):
 
     if network.is_saved:
       self._connecting = network.ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.activate_connection(network.ssid)
       self._update_buttons()
     elif network.security_type == SecurityType.OPEN:
       self._connecting = network.ssid
-      self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(network.ssid, "")
       self._update_buttons()
     else:
@@ -384,6 +418,15 @@ class WifiUIMici(NavWidget):
     self._connecting = None
 
   def _render(self, _):
+    # Complete reorder once a button's fade-out finishes
+    for i, btn in enumerate(self._scroller._items):
+      if isinstance(btn, WifiButton) and btn._faded_out and i > 0:
+        self._scroller._items.pop(i)
+        btn.animate_in()
+        self._scroller._items.insert(0, btn)
+        self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
+        break
+
     self._scroller.render(self._rect)
 
     anim_x = self._rect.x
