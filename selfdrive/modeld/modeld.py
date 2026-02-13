@@ -6,6 +6,8 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+  os.environ['JIT_BATCH_SIZE'] = '0'
+  os.environ['GRAPH_ONE_KERNEL'] = '1'
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
 from tinygrad import Device
@@ -236,7 +238,12 @@ class ModelState:
     if prepare_only:
       return None
 
-    self.vision_output = self.vision_run(**vision_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
+    self.vision_output = self.vision_run(**vision_inputs).contiguous().realize()
+    Device[Device.DEFAULT].synchronize()
+    t3 = time.perf_counter()
+    self.vision_output = self.vision_output.uop.base.buffer.numpy().flatten()
+    t4 = time.perf_counter()
+
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
     for k, dummy_value in self.dummy_ll_outputs.items():
@@ -252,8 +259,7 @@ class ModelState:
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
-    t3 = time.perf_counter()
-    print(f'Model timings: warp {1000*(t1 - t0):.2f} ms, copy {1000*(t2 - t1):.2f} ms, model run {1000*(t3 - t2):.2f} ms')
+    print(f'Model timings: warp {1000*(t1 - t0):.2f} ms, copy in {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
 
     return combined_outputs_dict
 
