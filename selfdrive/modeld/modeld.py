@@ -6,7 +6,9 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
+from tinygrad import Device
 import time
 import pickle
 import numpy as np
@@ -165,8 +167,8 @@ class ModelState:
       self.full_input_queues.update_dtypes_and_shapes({k: self.numpy_inputs[k].dtype}, {k: self.numpy_inputs[k].shape})
     self.full_input_queues.reset()
 
-    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
-                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
+    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize(),
+                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize()}
     self.full_frames : dict[str, Tensor] = {}
     self._blob_cache : dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
@@ -206,7 +208,7 @@ class ModelState:
       yuv_size = self.frame_buf_params[key][3]
       # There is a ringbuffer of imgs, just cache tensors pointing to all of them
       if ptr not in self._blob_cache:
-        self._blob_cache[ptr] = Tensor.from_blob(ptr, (yuv_size,), dtype='uint8')
+        self._blob_cache[ptr] = Tensor.from_blob(ptr, (yuv_size,), dtype='uint8', device=WARP_DEVICE)
       self.full_frames[key] = self._blob_cache[ptr]
     for key in bufs.keys():
       self.transforms_np[key][:,:] = transforms[key][:,:]
@@ -215,9 +217,13 @@ class ModelState:
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
     self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
-    vision_inputs = {'img': out[1], 'big_img': out[3]}
-
+    Device[WARP_DEVICE].synchronize()
     t1 = time.perf_counter()
+    vision_inputs = {'img': out[1], 'big_img': out[3]}
+    if USBGPU:
+      vision_inputs = {k: v.to(Device.DEFAULT).realize() for k, v in vision_inputs.items()}
+    Device[Device.DEFAULT].synchronize()
+    t2 = time.perf_counter()
     if prepare_only:
       return None
 
@@ -234,8 +240,8 @@ class ModelState:
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
-    t2 = time.perf_counter()
-    # print(f'Model timings: prepare {1000*(t1 - t0):.2f} ms, model run {1000*(t2 - t1):.2f} ms')
+    t3 = time.perf_counter()
+    print(f'Model timings: warp {1000*(t1 - t0):.2f} ms, copy {1000*(t2 - t1):.2f} ms, model run {1000*(t3 - t2):.2f} ms')
 
     return combined_outputs_dict
 
