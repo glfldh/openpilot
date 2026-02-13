@@ -158,7 +158,7 @@ class LongitudinalPlanner:
 
     if reset_state:
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
-      self.a_desired = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
+      self.output_a_target = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
       self.prev_accel_clip = accel_clip
 
     # Prevent divergence, smooth in current v_ego
