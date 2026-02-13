@@ -3,9 +3,7 @@ import numpy as np
 import pyray as rl
 from collections.abc import Callable
 
-from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog, BigConfirmationDialogV2
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_COLOR, LABEL_HORIZONTAL_PADDING, LABEL_VERTICAL_PADDING
 from openpilot.system.ui.lib.application import gui_app, MousePos, FontWeight
@@ -19,22 +17,7 @@ def normalize_ssid(ssid: str) -> str:
 
 
 class LoadingAnimation(Widget):
-  def __init__(self):
-    super().__init__()
-    self._opacity_target = 1.0
-    self._opacity_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
-
-  def set_opacity(self, opacity: float):
-    self._opacity_target = opacity
-
   def _render(self, _):
-    # rl.draw_rectangle_lines_ex(self._rect, 1, rl.RED)
-
-    self._opacity_filter.update(self._opacity_target)
-
-    if self._opacity_filter.x <= 0.01:
-      return
-
     cx = int(self._rect.x + self._rect.width / 2)
     cy = int(self._rect.y + self._rect.height / 2)
 
@@ -45,7 +28,7 @@ class LoadingAnimation(Widget):
     for i in range(3):
       x = cx - spacing + i * spacing
       y = int(cy + min(math.sin((rl.get_time() - i * 0.2) * anim_scale) * y_mag, 0))
-      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]) * self._opacity_filter.x)
+      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]))
       rl.draw_circle(x, y, 5, rl.Color(255, 255, 255, alpha))
 
 
@@ -106,16 +89,6 @@ class WifiIcon(Widget):
       rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, tint)
 
 
-class Divider(Widget):
-  def __init__(self):
-    super().__init__()
-    self.set_rect(rl.Rectangle(0, 0, 4, 120))
-
-  def _render(self, _):
-    # rounded edges, 45% white
-    rl.draw_rectangle_rounded(self._rect, self._rect.width / 2, 4, rl.Color(255, 255, 255, int(255 * 0.45)))
-
-
 class WifiButton(BigButton):
   LABEL_PADDING = 98
   LABEL_WIDTH = 402 - 98 - 28  # button width - left padding - right padding
@@ -164,14 +137,12 @@ class WifiButton(BigButton):
 
     # Wifi icon
     self._wifi_icon.set_opacity(0.35 if self._network_missing else 1.0)
-    wifi_icon_rect = rl.Rectangle(
+    self._wifi_icon.render(rl.Rectangle(
       self._rect.x,
       btn_y + 23,
       self._wifi_icon.rect.width,
       self._wifi_icon.rect.height,
-    )
-    self._wifi_icon.render(wifi_icon_rect)
-    # rl.draw_rectangle_lines_ex(wifi_icon_rect, 1, rl.RED)
+    ))
 
     # Forget button
     if (self._network.is_saved or self._is_connecting) and not self._network_missing:
@@ -261,11 +232,7 @@ class WifiUIMici(NavWidget):
   def __init__(self, wifi_manager: WifiManager, back_callback: Callable):
     super().__init__()
 
-    self._scroller = Scroller([],
-                              # horizontal=False, pad_start=100, pad_end=100, spacing=0, snap_items=True
-                              snap_items=False,
-                              )
-    self._saved_divider = Divider()
+    self._scroller = Scroller([], snap_items=False)
 
     # Set up back navigation
     self.set_back_callback(back_callback)
@@ -289,18 +256,6 @@ class WifiUIMici(NavWidget):
     super().show_event()
     self._scroller.show_event()
     self._wifi_manager.set_active(True)
-
-    # # TEMP: fake networks for testing without dbus
-    # fake_networks = [
-    #   Network(ssid="HomeWifi", strength=90, is_connected=True, security_type=SecurityType.OPEN, is_saved=True),
-    #   Network(ssid="OfficeNet", strength=75, is_connected=False, security_type=SecurityType.OPEN, is_saved=True),
-    #   Network(ssid="CoffeeShop", strength=60, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
-    #   Network(ssid="Neighbor5G", strength=45, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
-    #   Network(ssid="GuestNetwork", strength=80, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
-    #   Network(ssid="xfinitywifi", strength=30, is_connected=False, security_type=SecurityType.OPEN, is_saved=False),
-    #   Network(ssid="MyHotspot", strength=55, is_connected=False, security_type=SecurityType.OPEN, is_saved=True),
-    # ]
-    # self._on_network_updated(fake_networks)
 
   def hide_event(self):
     super().hide_event()
@@ -347,16 +302,6 @@ class WifiUIMici(NavWidget):
     if front_btn_idx is not None and front_btn_idx > 0:
       self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
 
-    # # Insert divider between known (saved/connecting/connected) and unknown groups
-    # if self._saved_divider in self._scroller._items:
-    #   self._scroller._items.remove(self._saved_divider)
-    #
-    # is_known = lambda n: n.is_connected or n.is_saved or n.ssid == self._connecting
-    # if any(is_known(n) for n in self._networks.values()) and any(not is_known(n) for n in self._networks.values()):
-    #   divider_idx = next(i for i, btn in enumerate(self._scroller._items)
-    #                      if isinstance(btn, WifiButton) and not is_known(btn.network))
-    #   self._scroller._items.insert(divider_idx, self._saved_divider)
-
   def _connect_with_password(self, ssid: str, password: str):
     import os
     password = os.getenv('WIFI_PASSWORD', password)
@@ -372,7 +317,6 @@ class WifiUIMici(NavWidget):
       cloudlog.warning(f"Trying to connect to unknown network: {ssid}")
       return
 
-    print('connecting to', ssid, 'saved:', network.is_saved, 'security:', network.security_type)
     if network.is_saved:
       self._connecting = network.ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
@@ -400,17 +344,6 @@ class WifiUIMici(NavWidget):
 
   def _on_disconnected(self):
     self._connecting = None
-
-  # def _update_state(self):
-  #   super()._update_state()
-  #   if self.is_pressed:
-  #     self._last_interaction_time = rl.get_time()
-  #     self._loading_animation.set_opacity(0.0)
-  #   elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
-  #     self._loading_animation.set_opacity(1.0)
-  #
-  #   if len(self._networks) == 0:
-  #     self._loading_animation.set_opacity(1.0)
 
   def _render(self, _):
     self._scroller.render(self._rect)
