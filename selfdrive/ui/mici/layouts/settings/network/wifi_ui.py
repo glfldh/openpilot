@@ -352,13 +352,20 @@ class WifiUIMici(NavWidget):
     hint = "wrong password..." if incorrect_password else "enter password..."
     dlg = BigInputDialog(hint, "", minimum_length=8,
                          confirm_callback=lambda _password: self._connect_with_password(ssid, _password))
-    gui_app.set_modal_overlay(dlg)
+
+    def on_close(_):
+      gui_app.set_modal_overlay_tick(None)
+
+    # Process wifi callbacks while the keyboard is shown so forgotten clears connecting state
+    gui_app.set_modal_overlay_tick(self._wifi_manager.process_callbacks)
+    gui_app.set_modal_overlay(dlg, on_close)
 
   def _on_activated(self):
     self._connecting = None
 
-  def _on_forgotten(self):
-    self._connecting = None
+  def _on_forgotten(self, ssid):
+    if self._connecting == ssid:
+      self._connecting = None
 
   def _on_disconnected(self):
     self._connecting = None
