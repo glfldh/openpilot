@@ -127,18 +127,6 @@ class WifiButton(BigButton):
   def network(self) -> Network:
     return self._network
 
-  @property
-  def is_pressed(self) -> bool:
-    return super().is_pressed and not self._forget_btn.is_pressed
-
-  def _handle_mouse_press(self, mouse_pos: MousePos):
-    super()._handle_mouse_press(mouse_pos)
-    self._forget_btn_was_pressed = self._forget_btn.is_pressed
-
-  def _handle_mouse_release(self, mouse_pos: MousePos):
-    if not self._forget_btn_was_pressed:
-      super()._handle_mouse_release(mouse_pos)
-
   def _get_label_font_size(self):
     return 48
 
@@ -180,7 +168,7 @@ class WifiButton(BigButton):
       ))
 
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
-    super().set_touch_valid_callback(touch_callback)
+    super().set_touch_valid_callback(lambda: touch_callback() and not self._forget_btn.is_pressed)
     self._forget_btn.set_touch_valid_callback(touch_callback)
 
   def set_current_network(self, network: Network):
