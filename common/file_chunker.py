@@ -3,12 +3,13 @@ import math
 import os
 from pathlib import Path
 
-CHUNK_SIZE = 45 * 1024 * 1024
+CHUNK_SIZE = 10 * 1024 * 1024
+assert CHUNK_SIZE >=  10 * 1024 * 1024, "chunk size must be > 10MB to allow for metadata overhead"
 MANIFEST_SUFFIX = ".parts"
 CHUNK_SUFFIX_FMT = ".chunk{idx:02d}"
 
 def get_num_chunks(file_size: int) -> int:
-  return math.ceil(file_size / CHUNK_SIZE) + 1
+  return math.ceil(file_size / CHUNK_SIZE) + 2 # tg pkl 4 chunks of overhead
 
 def chunk_file(path: str, num_chunks: int | None = None) -> str:
   p = Path(path)
