@@ -204,6 +204,11 @@ class WifiButton(BigButton):
   def set_current_network(self, network: Network):
     self._network = network
     self._wifi_icon.set_current_network(network)
+    self.set_enabled(True)
+    self.set_network_missing(False)
+
+  def set_network_missing(self, missing: bool):
+    self._wifi_icon.set_network_missing(missing)
 
   def set_connecting(self, is_connecting: Callable[[], str | None]):
     self._connecting = is_connecting
@@ -327,7 +332,7 @@ class WifiUIMici(NavWidget):
     self._networks = {network.ssid: network for network in networks}
     self._update_buttons()
 
-  def _update_buttons(self, force: bool = False):
+  def _update_buttons(self):
     existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
     print('_UPDATE_BUTTONS')
 
@@ -347,7 +352,6 @@ class WifiUIMici(NavWidget):
       #   self._scroller._items[network_button_idx].set_current_network(network)
       if network.ssid in existing_buttons:
         network_button = existing_buttons[network.ssid]
-        self._scroller._items.remove(network_button)
         # Update network on existing button
         network_button.set_current_network(network)
       else:
@@ -362,9 +366,6 @@ class WifiUIMici(NavWidget):
     if connected_btn_idx is not None and connected_btn_idx > 0:
       self._scroller._items.insert(0, self._scroller._items.pop(connected_btn_idx))
       self._scroller._layout()  # fixes selected style single frame stutter
-
-    # remove networks no longer present
-    self._scroller._items[:] = [btn for btn in self._scroller._items if not isinstance(btn, WifiButton) or btn.network.ssid in self._networks]
 
     # insert divider between saved/connecting and unsaved groups
     def _is_known(n):
@@ -382,16 +383,13 @@ class WifiUIMici(NavWidget):
     if connecting_btn is not None and connecting_old_x is not None:
       connecting_btn.animate_from(connecting_old_x)
 
-    # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
-    self._restore_selection = True
-
-    # # Disable networks no longer present
-    # for btn in self._scroller._items:
-    #   if not isinstance(btn, WifiButton):
-    #     continue
-    #   if btn.text not in self._networks:
-    #     btn.set_enabled(False)
-    #     btn.set_network_missing(True)
+    # Disable networks no longer present
+    for btn in self._scroller._items:
+      if not isinstance(btn, WifiButton):
+        continue
+      if btn.text not in self._networks:
+        btn.set_enabled(False)
+        btn.set_network_missing(True)
 
   def _connect_with_password(self, ssid: str, password: str):
     import os
@@ -400,7 +398,7 @@ class WifiUIMici(NavWidget):
       self._connecting = ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(ssid, password)
-      self._update_buttons(True)
+      self._update_buttons()
 
   def _connect_to_network(self, ssid: str):
     network = self._networks.get(ssid)
@@ -413,12 +411,12 @@ class WifiUIMici(NavWidget):
       self._connecting = network.ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.activate_connection(network.ssid)
-      self._update_buttons(True)
+      self._update_buttons()
     elif network.security_type == SecurityType.OPEN:
       self._connecting = network.ssid
       self._scroller.scroll_to(self._scroller.scroll_panel.get_offset(), smooth=True)
       self._wifi_manager.connect_to_network(network.ssid, "")
-      self._update_buttons(True)
+      self._update_buttons()
     else:
       self._on_need_auth(network.ssid, False)
 
@@ -454,15 +452,3 @@ class WifiUIMici(NavWidget):
     anim_x = self._rect.x
     anim_y = self._rect.y + self._rect.height - 25 + 2
     self._loading_animation.render(rl.Rectangle(anim_x, anim_y, 90, 20))
-
-    # Update Scroller layout and restore current selection whenever buttons are updated, before first render
-    # current_selection = self.get_selected_option()
-    # if self._restore_selection and current_selection in self._networks:
-    #   self._scroller._layout()
-    #   BigMultiOptionDialog._on_option_selected(self, current_selection)
-    #   self._restore_selection = None
-    #
-    # super()._render(_)
-    #
-    # if not self._networks:
-    #   self._loading_animation.render(self._rect)
