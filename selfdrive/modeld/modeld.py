@@ -221,7 +221,8 @@ class ModelState:
     t1 = time.perf_counter()
     vision_inputs = {'img': out[1], 'big_img': out[3]}
     if USBGPU:
-      vision_inputs = {k: v.to(Device.DEFAULT).realize() for k, v in vision_inputs.items()}
+      vision_inputs = {k: v.to(Device.DEFAULT) for k, v in vision_inputs.items()}
+      Tensor.realize(*vision_inputs.values())
     Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()
     if prepare_only:
