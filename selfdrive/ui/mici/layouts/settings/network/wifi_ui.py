@@ -338,60 +338,42 @@ class WifiUIMici(NavWidget):
     self._update_buttons()
 
   def _update_buttons(self):
-    existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
     print('_UPDATE_BUTTONS')
+    existing = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
 
-    # Sort with connecting first (wifi_manager doesn't know about connecting state)
-    networks = sorted(self._networks.values(), key=lambda n: (-(n.ssid == self._connecting), -n.is_connected, -n.is_saved))
-
-    # Record position of connecting button before re-sorting so we can animate it
-    connecting_btn = existing_buttons.get(self._connecting) if self._connecting else None
-    connecting_old_x = connecting_btn.rect.x if connecting_btn else None
-
-    for network in networks:
-      # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
-      # if network.ssid in existing_buttons:
-      #   network_button = existing_buttons[network.ssid]
-      #   self._scroller._items.remove(network_button)
-      #   # Update network on existing button
-      #   self._scroller._items[network_button_idx].set_current_network(network)
-      if network.ssid in existing_buttons:
-        network_button = existing_buttons[network.ssid]
-        # Update network on existing button
-        network_button.set_current_network(network)
+    # Update existing buttons, add new ones to the end
+    for network in self._networks.values():
+      if network.ssid in existing:
+        existing[network.ssid].set_current_network(network)
       else:
-        # network_button = BigButton(network.ssid, 'connected')
-        network_button = WifiButton(network, self._forget_network)
-        network_button.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
-        network_button.set_connecting(lambda: self._connecting)
-        self._scroller.add_widget(network_button)
+        btn = WifiButton(network, self._forget_network)
+        btn.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
+        btn.set_connecting(lambda: self._connecting)
+        self._scroller.add_widget(btn)
 
-    # Move connected network to the start
-    connected_btn_idx = next((i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and btn.network.is_connected and not btn._network_missing), None)
-    if connected_btn_idx is not None and connected_btn_idx > 0:
-      self._scroller._items.insert(0, self._scroller._items.pop(connected_btn_idx))
-      # self._scroller._layout()  # fixes selected style single frame stutter
-
-    # insert divider between saved/connecting and unsaved groups
-    def _is_known(n):
-      return n.is_connected or n.is_saved or n.ssid == self._connecting
-
-    has_known = any(_is_known(n) for n in self._networks.values())
-    has_unsaved = any(not _is_known(n) for n in self._networks.values())
-    if self._saved_divider in self._scroller._items:
-      self._scroller._items.remove(self._saved_divider)
-    if has_known and has_unsaved:
-      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(btn.network))
-      self._scroller._items.insert(divider_idx, self._saved_divider)
-
-    # Animate connecting button sliding from its old position to the front
-    if connecting_btn is not None and connecting_old_x is not None:
-      connecting_btn.animate_from(connecting_old_x)
-
-    # Mark networks no longer present (display handled by _update_state)
+    # Mark networks no longer in scan results (display handled by _update_state)
     for btn in self._scroller._items:
       if isinstance(btn, WifiButton) and btn.network.ssid not in self._networks:
         btn.set_network_missing(True)
+
+    # Move connecting/connected network to the front with animation
+    front_btn_idx = next((i for i, btn in enumerate(self._scroller._items)
+                          if isinstance(btn, WifiButton) and not btn._network_missing and
+                          (btn.network.ssid == self._connecting or btn.network.is_connected)), None)
+    if front_btn_idx is not None and front_btn_idx > 0:
+      btn = self._scroller._items[front_btn_idx]
+      old_x = btn.rect.x
+      self._scroller._items.insert(0, self._scroller._items.pop(front_btn_idx))
+      btn.animate_from(old_x)
+
+    # Insert divider between known (saved/connecting/connected) and unknown groups
+    is_known = lambda n: n.is_connected or n.is_saved or n.ssid == self._connecting
+    if self._saved_divider in self._scroller._items:
+      self._scroller._items.remove(self._saved_divider)
+    if any(is_known(n) for n in self._networks.values()) and any(not is_known(n) for n in self._networks.values()):
+      divider_idx = next(i for i, btn in enumerate(self._scroller._items)
+                         if isinstance(btn, WifiButton) and not is_known(btn.network))
+      self._scroller._items.insert(divider_idx, self._saved_divider)
 
   def _connect_with_password(self, ssid: str, password: str):
     import os
