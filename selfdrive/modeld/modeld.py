@@ -8,6 +8,8 @@ if USBGPU:
   os.environ['AMD_IFACE'] = 'USB'
   os.environ['JIT_BATCH_SIZE'] = '0'
   os.environ['GRAPH_ONE_KERNEL'] = '1'
+  os.environ['AMD_AQL'] = '1'
+  os.environ['AMD_SDMA_BIND'] = '1'
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
 from tinygrad import Device
