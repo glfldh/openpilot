@@ -8,7 +8,7 @@ if USBGPU:
   os.environ['AMD_IFACE'] = 'USB'
   os.environ['JIT_BATCH_SIZE'] = '0'
   os.environ['GRAPH_ONE_KERNEL'] = '1'
-  os.environ['AMD_AQL'] = '1'
+  # os.environ['AMD_AQL'] = '1' hangs on workstation
   os.environ['AMD_SDMA_BIND'] = '1'
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
@@ -230,19 +230,23 @@ class ModelState:
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
     self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
     Device[WARP_DEVICE].synchronize()
+
     t1 = time.perf_counter()
     vision_inputs = {'img': out[1], 'big_img': out[3]}
     if USBGPU:
       vision_inputs = {k: v.to(Device.DEFAULT) for k, v in vision_inputs.items()}
       Tensor.realize(*vision_inputs.values())
+
     Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()
+
     if prepare_only:
       return None
 
     self.vision_output = self.vision_run(**vision_inputs).contiguous().realize()
     Device[Device.DEFAULT].synchronize()
     t3 = time.perf_counter()
+
     self.vision_output = self.vision_output.uop.base.buffer.numpy().flatten()
     t4 = time.perf_counter()
 
