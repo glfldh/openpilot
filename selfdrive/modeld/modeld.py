@@ -36,7 +36,7 @@ PROCESS_NAME = "selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_vision_tinygrad.pkl'
-POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl' if not USBGPU else Path(__file__).parent / 'models/big_driving_policy_tinygrad.pkl'
+POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl' # if not USBGPU else Path(__file__).parent / 'models/big_driving_policy_tinygrad.pkl'
 VISION_METADATA_PATH = Path(__file__).parent / 'models/driving_vision_metadata.pkl'
 POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.pkl'
 MODELS_DIR = Path(__file__).parent / 'models'
