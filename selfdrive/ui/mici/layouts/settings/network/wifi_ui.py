@@ -3,6 +3,7 @@ import numpy as np
 import pyray as rl
 from collections.abc import Callable
 
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog, BigConfirmationDialogV2
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_COLOR, LABEL_HORIZONTAL_PADDING, LABEL_VERTICAL_PADDING
@@ -17,7 +18,27 @@ def normalize_ssid(ssid: str) -> str:
 
 
 class LoadingAnimation(Widget):
+  HIDE_TIME = 4
+
+  def __init__(self):
+    super().__init__()
+    self._opacity_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
+    self._opacity_target = 1.0
+    self._hide_time = 0.0
+
+  def set_opacity(self, opacity: float):
+    self._opacity_target = opacity
+    self._hide_time = rl.get_time()
+
   def _render(self, _):
+    self._opacity_filter.update(self._opacity_target)
+
+    if rl.get_time() - self._hide_time > self.HIDE_TIME:
+      self.set_opacity(1.0)
+
+    if self._opacity_filter.x < 0.01:
+      return
+
     cx = int(self._rect.x + self._rect.width / 2)
     cy = int(self._rect.y + self._rect.height / 2)
 
@@ -28,7 +49,7 @@ class LoadingAnimation(Widget):
     for i in range(3):
       x = cx - spacing + i * spacing
       y = int(cy + min(math.sin((rl.get_time() - i * 0.2) * anim_scale) * y_mag, 0))
-      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]))
+      alpha = int(np.interp(cy - y, [0, y_mag], [255 * 0.45, 255 * 0.9]) * self._opacity_filter.x)
       rl.draw_circle(x, y, 5, rl.Color(255, 255, 255, alpha))
 
 
@@ -277,6 +298,7 @@ class WifiUIMici(NavWidget):
   def _on_network_updated(self, networks: list[Network]):
     self._networks = {network.ssid: network for network in networks}
     self._update_buttons()
+    self._loading_animation.set_opacity(0.0)
 
   def _update_buttons(self):
     # Update existing buttons, add new ones to the end
