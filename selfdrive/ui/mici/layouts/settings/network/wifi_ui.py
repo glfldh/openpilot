@@ -143,7 +143,7 @@ class WifiButton(BigButton):
     self._fading_out = False
     self._fade_filter.x = 1.0
     self._fade_target = 0.0
-    self._fade_delay_until = rl.get_time() + 0.5
+    self._fade_delay_until = rl.get_time() + 0.6
 
   def _render(self, rect):
     super()._render(rect)
