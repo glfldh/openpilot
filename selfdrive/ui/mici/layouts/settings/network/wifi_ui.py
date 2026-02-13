@@ -117,14 +117,24 @@ class WifiButton(BigButton):
     self._forget_callback = forget_callback
     self._connecting_callback = connecting_callback
 
-    # State
-    self._network_missing = False
-    self._network_forgetting = False
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
     self._forget_btn = ForgetButton(self._forget_network)
-    self._forget_btn_was_pressed = False
     self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
+
+    # Eager state (not sourced from Network)
+    self._network_missing = False
+    self._network_forgetting = False
+    self._network_forgot = False
+
+  def set_current_network(self, network: Network):
+    self._network = network
+    self._wifi_icon.set_current_network(network)
+
+    # We can assume network is not missing and that is_saved is accurate if got new Network
+    self._network_missing = False
+    self._wifi_icon.set_network_missing(False)
+    self._network_forgot = False
 
   def _forget_network(self):
     if self._network_forgetting:
@@ -133,6 +143,16 @@ class WifiButton(BigButton):
     self._network_forgetting = True
     self._forget_btn.set_visible(False)
     self._forget_callback(self._network.ssid)
+
+  def on_forgotten(self):
+    # Fired when WifiManager finishes forget. Network may still be old, so override is_saved with _network_forgot
+    self._network_forgot = True
+    self._network_forgetting = False
+    self._forget_btn.set_visible(True)
+
+  def set_network_missing(self, missing: bool):
+    self._network_missing = missing
+    self._wifi_icon.set_network_missing(missing)
 
   @property
   def network(self) -> Network:
@@ -175,7 +195,7 @@ class WifiButton(BigButton):
     ))
 
     # Forget button
-    if (self._network.is_saved or self._is_connecting) and not self._network_missing:
+    if (self._network.is_saved and not self._network_forgot) or self._is_connecting:
       self._forget_btn.render(rl.Rectangle(
         self._rect.x + self._rect.width - self._forget_btn.rect.width,
         btn_y + self._rect.height - self._forget_btn.rect.height,
@@ -186,21 +206,6 @@ class WifiButton(BigButton):
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
     super().set_touch_valid_callback(lambda: touch_callback() and not self._forget_btn.is_pressed)
     self._forget_btn.set_touch_valid_callback(touch_callback)
-
-  def set_current_network(self, network: Network):
-    self._network = network
-    self._wifi_icon.set_current_network(network)
-    self._network_missing = False
-    self._wifi_icon.set_network_missing(False)
-
-    # Reset eager forgetting state when updated network is no longer saved
-    if not network.is_saved:
-      self._network_forgetting = False
-      self._forget_btn.set_visible(True)
-
-  def set_network_missing(self, missing: bool):
-    self._network_missing = missing
-    self._wifi_icon.set_network_missing(missing)
 
   @property
   def _is_connecting(self):
@@ -295,14 +300,6 @@ class WifiUIMici(NavWidget):
     # clear scroller items to remove old networks on next show
     self._scroller._items.clear()
 
-  def _forget_network(self, ssid: str):
-    network = self._networks.get(ssid)
-    if network is None:
-      cloudlog.warning(f"Trying to forget unknown network: {ssid}")
-      return
-
-    self._wifi_manager.forget_connection(network.ssid)
-
   def _on_network_updated(self, networks: list[Network]):
     self._networks = {network.ssid: network for network in networks}
     self._update_buttons()
@@ -316,7 +313,7 @@ class WifiUIMici(NavWidget):
       if network.ssid in existing:
         existing[network.ssid].set_current_network(network)
       else:
-        btn = WifiButton(network, self._forget_network, lambda: self._connecting)
+        btn = WifiButton(network, self._wifi_manager.forget_connection, lambda: self._connecting)
         btn.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
         self._scroller.add_widget(btn)
 
@@ -378,6 +375,12 @@ class WifiUIMici(NavWidget):
   def _on_forgotten(self, ssid):
     if self._connecting == ssid:
       self._connecting = None
+
+    # For eager UI forget
+    for btn in self._scroller._items:
+      if isinstance(btn, WifiButton) and btn.network.ssid == ssid:
+        btn.on_forgotten()
+        break
 
   def _on_disconnected(self):
     self._connecting = None
