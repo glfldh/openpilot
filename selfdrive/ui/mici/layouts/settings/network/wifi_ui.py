@@ -31,10 +31,10 @@ class LoadingAnimation(Widget):
     self._hide_time = rl.get_time()
 
   def _render(self, _):
-    self._opacity_filter.update(self._opacity_target)
-
     if rl.get_time() - self._hide_time > self.HIDE_TIME:
       self.set_opacity(1.0)
+
+    self._opacity_filter.update(self._opacity_target)
 
     if self._opacity_filter.x < 0.01:
       return
@@ -62,7 +62,7 @@ class WifiIcon(Widget):
     self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 48, 36)
     self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 48, 36)
     self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 48, 36)
-    self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock_new.png", 21, 27)
+    self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock.png", 21, 27)
 
     self._network: Network | None = None
     self._network_missing = False  # if network disappeared from scan results
