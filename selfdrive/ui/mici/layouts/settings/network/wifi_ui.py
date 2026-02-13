@@ -279,9 +279,9 @@ class WifiUIMici(NavWidget):
     self._update_buttons()
 
   def _update_buttons(self):
+    # Update existing buttons, add new ones to the end
     existing = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
 
-    # Update existing buttons, add new ones to the end
     for network in self._networks.values():
       if network.ssid in existing:
         existing[network.ssid].set_current_network(network)
