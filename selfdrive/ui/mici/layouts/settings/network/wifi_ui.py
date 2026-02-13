@@ -113,15 +113,26 @@ class WifiButton(BigButton):
   def __init__(self, network: Network, forget_callback: Callable[[str], None], connecting_callback: Callable[[], str | None]):
     super().__init__(normalize_ssid(network.ssid), scroll=True)
 
-    # State
     self._network = network
-    self._network_missing = False
+    self._forget_callback = forget_callback
     self._connecting_callback = connecting_callback
+
+    # State
+    self._network_missing = False
+    self._network_forgetting = False
     self._wifi_icon = WifiIcon()
     self._wifi_icon.set_current_network(network)
-    self._forget_btn = ForgetButton(lambda: forget_callback(self._network.ssid))
+    self._forget_btn = ForgetButton(self._forget_network)
     self._forget_btn_was_pressed = False
     self._check_txt = gui_app.texture("icons_mici/setup/driver_monitoring/dm_check.png", 32, 32)
+
+  def _forget_network(self):
+    if self._network_forgetting:
+      return
+
+    self._network_forgetting = True
+    self._forget_btn.set_visible(False)
+    self._forget_callback(self._network.ssid)
 
   @property
   def network(self) -> Network:
@@ -146,7 +157,7 @@ class WifiButton(BigButton):
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self.LABEL_WIDTH)
 
-      if self._network.is_connected and not self._is_connecting and not self._network_missing:
+      if self._network.is_connected and not self._is_connecting and not self._network_forgetting and not self._network_missing:
         check_y = int(label_y - sub_label_height + (sub_label_height - self._check_txt.height) / 2)
         rl.draw_texture(self._check_txt, int(sub_label_x), check_y, rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)))
         sub_label_x += self._check_txt.width + 14
@@ -182,6 +193,11 @@ class WifiButton(BigButton):
     self._network_missing = False
     self._wifi_icon.set_network_missing(False)
 
+    # Reset eager forgetting state when updated network is no longer saved
+    if not network.is_saved:
+      self._network_forgetting = False
+      self._forget_btn.set_visible(True)
+
   def set_network_missing(self, missing: bool):
     self._network_missing = missing
     self._wifi_icon.set_network_missing(missing)
@@ -192,12 +208,15 @@ class WifiButton(BigButton):
     return is_connecting
 
   def _update_state(self):
-    if self._network_missing or self._is_connecting or self._network.is_connected or self._network.security_type == SecurityType.UNSUPPORTED:
+    if any((self._network_forgetting, self._network_missing, self._is_connecting, self._network.is_connected,
+            self._network.security_type == SecurityType.UNSUPPORTED)):
       self.set_enabled(False)
       self._sub_label.set_color(rl.Color(255, 255, 255, int(255 * 0.585)))
       self._sub_label.set_font_weight(FontWeight.ROMAN)
 
-      if self._network_missing:
+      if self._network_forgetting:
+        self.set_value("forgetting...")
+      elif self._network_missing:
         self.set_value("not in range")
       elif self._is_connecting:
         self.set_value("connecting...")
