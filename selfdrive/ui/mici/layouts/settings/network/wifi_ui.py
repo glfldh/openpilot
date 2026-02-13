@@ -56,17 +56,16 @@ class LoadingAnimation(Widget):
 class WifiIcon(Widget):
   def __init__(self):
     super().__init__()
-    self.set_rect(rl.Rectangle(0, 0, 86, 64))
+    self.set_rect(rl.Rectangle(0, 0, 48 + 5, 36 + 5))
 
-    self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 86, 64)
-    self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 86, 64)
-    self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 86, 64)
-    self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 86, 64)
-    self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock.png", 22, 32)
+    self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 48, 36)
+    self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 48, 36)
+    self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 48, 36)
+    self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 48, 36)
+    self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock_new.png", 21, 27)
 
     self._network: Network | None = None
     self._network_missing = False  # if network disappeared from scan results
-    self._scale = 0.6  # TODO: remove this
     self._opacity = 1.0
 
   def set_current_network(self, network: Network):
@@ -98,16 +97,13 @@ class WifiIcon(Widget):
       strength_icon = self._wifi_low_txt
 
     tint = rl.Color(255, 255, 255, int(255 * self._opacity))
-    icon_x = self._rect.x + (self._rect.width - strength_icon.width * self._scale) // 2
-    icon_y = self._rect.y + (self._rect.height - strength_icon.height * self._scale) // 2
-    rl.draw_texture_ex(strength_icon, (icon_x, icon_y), 0.0, self._scale, tint)
+    rl.draw_texture_ex(strength_icon, (self._rect.x, self._rect.y), 0.0, 1.0, tint)
 
     # Render lock icon at lower right of wifi icon if secured
     if self._network.security_type not in (SecurityType.OPEN, SecurityType.UNSUPPORTED):
-      lock_scale = self._scale * 1.1
-      lock_x = int(icon_x + 1 + strength_icon.width * self._scale - self._lock_txt.width * lock_scale / 2)
-      lock_y = int(icon_y + 1 + strength_icon.height * self._scale - self._lock_txt.height * lock_scale / 2)
-      rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, tint)
+      lock_x = int(self._rect.x + self._rect.width - self._lock_txt.width)
+      lock_y = int(self._rect.y + self._rect.height - self._lock_txt.height)
+      rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, 1.0, tint)
 
 
 class WifiButton(BigButton):
@@ -168,8 +164,8 @@ class WifiButton(BigButton):
     # Wifi icon
     self._wifi_icon.set_opacity(0.35 if self._network_missing else 1.0)
     self._wifi_icon.render(rl.Rectangle(
-      self._rect.x + 5,
-      btn_y + 15,
+      self._rect.x + 30,
+      btn_y + 36,
       self._wifi_icon.rect.width,
       self._wifi_icon.rect.height,
     ))
