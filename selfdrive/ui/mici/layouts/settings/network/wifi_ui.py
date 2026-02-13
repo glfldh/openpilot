@@ -54,16 +54,25 @@ class WifiIcon(Widget):
     super().__init__()
     self.set_rect(rl.Rectangle(0, 0, 86, 64))
 
+    self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 86, 64)
     self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 86, 64)
     self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 86, 64)
     self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 86, 64)
     self._lock_txt = gui_app.texture("icons_mici/settings/network/new/lock.png", 22, 32)
 
     self._network: Network | None = None
+    self._network_missing = False  # if network disappeared from scan results
     self._scale = 0.6  # TODO: remove this
+    self._opacity = 1.0
 
   def set_current_network(self, network: Network):
     self._network = network
+
+  def set_network_missing(self, missing: bool):
+    self._network_missing = missing
+
+  def set_opacity(self, opacity: float):
+    self._opacity = opacity
 
   @staticmethod
   def get_strength_icon_idx(strength: int) -> int:
@@ -75,23 +84,26 @@ class WifiIcon(Widget):
 
     # Determine which wifi strength icon to use
     strength = self.get_strength_icon_idx(self._network.strength)
-    if strength == 2:
+    if self._network_missing:
+      strength_icon = self._wifi_slash_txt
+    elif strength == 2:
       strength_icon = self._wifi_full_txt
     elif strength == 1:
       strength_icon = self._wifi_medium_txt
     else:
       strength_icon = self._wifi_low_txt
 
+    tint = rl.Color(255, 255, 255, int(255 * self._opacity))
     icon_x = self._rect.x + (self._rect.width - strength_icon.width * self._scale) // 2
     icon_y = self._rect.y + (self._rect.height - strength_icon.height * self._scale) // 2
-    rl.draw_texture_ex(strength_icon, (icon_x, icon_y), 0.0, self._scale, rl.WHITE)
+    rl.draw_texture_ex(strength_icon, (icon_x, icon_y), 0.0, self._scale, tint)
 
     # Render lock icon at lower right of wifi icon if secured
     if self._network.security_type not in (SecurityType.OPEN, SecurityType.UNSUPPORTED):
       lock_scale = self._scale * 1.1
-      lock_x = icon_x + 1 + strength_icon.width * self._scale - self._lock_txt.width * lock_scale / 2
-      lock_y = icon_y + 1 + strength_icon.height * self._scale - self._lock_txt.height * lock_scale / 2
-      rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, rl.WHITE)
+      lock_x = int(icon_x + 1 + strength_icon.width * self._scale - self._lock_txt.width * lock_scale / 2)
+      lock_y = int(icon_y + 1 + strength_icon.height * self._scale - self._lock_txt.height * lock_scale / 2)
+      rl.draw_texture_ex(self._lock_txt, (lock_x, lock_y), 0.0, lock_scale, tint)
 
 
 class Divider(Widget):
@@ -253,9 +265,6 @@ class ForgetButton(Widget):
 
 
 class WifiUIMici(NavWidget):
-  # Wait this long after user interacts with widget to update network list
-  INACTIVITY_TIMEOUT = 1
-
   def __init__(self, wifi_manager: WifiManager, back_callback: Callable):
     super().__init__()
 
@@ -274,10 +283,6 @@ class WifiUIMici(NavWidget):
     self._connecting: str | None = None
     self._networks: dict[str, Network] = {}
 
-    # widget state
-    self._last_interaction_time = -float('inf')
-    self._restore_selection = False
-
     self._wifi_manager.add_callbacks(
       need_auth=self._on_need_auth,
       activated=self._on_activated,
@@ -291,7 +296,6 @@ class WifiUIMici(NavWidget):
     super().show_event()
     self._scroller.show_event()
     self._wifi_manager.set_active(True)
-    self._last_interaction_time = -float('inf')
 
     # # TEMP: fake networks for testing without dbus
     # fake_networks = [
@@ -308,6 +312,8 @@ class WifiUIMici(NavWidget):
   def hide_event(self):
     super().hide_event()
     self._wifi_manager.set_active(False)
+    # clear scroller items to remove old networks on next show
+    self._scroller._items.clear()
 
   def _forget_network(self, ssid: str):
     network = self._networks.get(ssid)
@@ -322,10 +328,6 @@ class WifiUIMici(NavWidget):
     self._update_buttons()
 
   def _update_buttons(self, force: bool = False):
-    # Don't update buttons while user is actively interacting
-    if rl.get_time() - self._last_interaction_time < self.INACTIVITY_TIMEOUT and not force:
-      return
-
     existing_buttons = {btn.network.ssid: btn for btn in self._scroller._items if isinstance(btn, WifiButton)}
     print('_UPDATE_BUTTONS')
 
@@ -338,6 +340,11 @@ class WifiUIMici(NavWidget):
 
     for network in networks:
       # pop and re-insert to eliminate stuttering on update (prevents position lost for a frame)
+      # if network.ssid in existing_buttons:
+      #   network_button = existing_buttons[network.ssid]
+      #   self._scroller._items.remove(network_button)
+      #   # Update network on existing button
+      #   self._scroller._items[network_button_idx].set_current_network(network)
       if network.ssid in existing_buttons:
         network_button = existing_buttons[network.ssid]
         self._scroller._items.remove(network_button)
@@ -348,8 +355,13 @@ class WifiUIMici(NavWidget):
         network_button = WifiButton(network, self._forget_network)
         network_button.set_click_callback(lambda ssid=network.ssid: self._connect_to_network(ssid))
         network_button.set_connecting(lambda: self._connecting)
+        self._scroller.add_widget(network_button)
 
-      self._scroller.add_widget(network_button)
+    # Move connected network to the start
+    connected_btn_idx = next((i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and btn.network.is_connected), None)
+    if connected_btn_idx is not None and connected_btn_idx > 0:
+      self._scroller._items.insert(0, self._scroller._items.pop(connected_btn_idx))
+      self._scroller._layout()  # fixes selected style single frame stutter
 
     # remove networks no longer present
     self._scroller._items[:] = [btn for btn in self._scroller._items if not isinstance(btn, WifiButton) or btn.network.ssid in self._networks]
@@ -362,9 +374,9 @@ class WifiUIMici(NavWidget):
     has_unsaved = any(not _is_known(n) for n in self._networks.values())
     if self._saved_divider in self._scroller._items:
       self._scroller._items.remove(self._saved_divider)
-    if has_known and has_unsaved:
-      divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(self._networks[btn.network.ssid]))
-      self._scroller._items.insert(divider_idx, self._saved_divider)
+    # if has_known and has_unsaved:
+    #   divider_idx = next(i for i, btn in enumerate(self._scroller._items) if isinstance(btn, WifiButton) and not _is_known(self._networks[btn.network.ssid]))
+    #   self._scroller._items.insert(divider_idx, self._saved_divider)
 
     # Animate connecting button sliding from its old position to the front
     if connecting_btn is not None and connecting_old_x is not None:
@@ -372,6 +384,14 @@ class WifiUIMici(NavWidget):
 
     # try to restore previous selection to prevent jumping from adding/removing/reordering buttons
     self._restore_selection = True
+
+    # # Disable networks no longer present
+    # for btn in self._scroller._items:
+    #   if not isinstance(btn, WifiButton):
+    #     continue
+    #   if btn.text not in self._networks:
+    #     btn.set_enabled(False)
+    #     btn.set_network_missing(True)
 
   def _connect_with_password(self, ssid: str, password: str):
     import os
@@ -417,16 +437,16 @@ class WifiUIMici(NavWidget):
   def _on_disconnected(self):
     self._connecting = None
 
-  def _update_state(self):
-    super()._update_state()
-    if self.is_pressed:
-      self._last_interaction_time = rl.get_time()
-      self._loading_animation.set_opacity(0.0)
-    elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
-      self._loading_animation.set_opacity(1.0)
-
-    if len(self._networks) == 0:
-      self._loading_animation.set_opacity(1.0)
+  # def _update_state(self):
+  #   super()._update_state()
+  #   if self.is_pressed:
+  #     self._last_interaction_time = rl.get_time()
+  #     self._loading_animation.set_opacity(0.0)
+  #   elif rl.get_time() - self._last_interaction_time >= self.INACTIVITY_TIMEOUT:
+  #     self._loading_animation.set_opacity(1.0)
+  #
+  #   if len(self._networks) == 0:
+  #     self._loading_animation.set_opacity(1.0)
 
   def _render(self, _):
     self._scroller.render(self._rect)
