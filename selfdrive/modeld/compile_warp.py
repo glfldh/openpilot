@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import time
 import pickle
 import numpy as np
@@ -12,8 +11,6 @@ from tinygrad.engine.jit import TinyJit
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
 from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
-
-BUFFER_DEVICE = 'AMD' if 'USBGPU' in os.environ else os.environ['DEV']
 
 MODELS_DIR = Path(__file__).parent / 'models'
 
@@ -28,12 +25,12 @@ UV_SCALE_MATRIX_INV = np.linalg.inv(UV_SCALE_MATRIX)
 IMG_BUFFER_SHAPE = (30, MEDMODEL_INPUT_SIZE[1] // 2, MEDMODEL_INPUT_SIZE[0] // 2)
 
 
-def warp_pkl_path(w, h, suffix=''):
-  return MODELS_DIR / f'warp_{w}x{h}_tinygrad{suffix}.pkl'
+def warp_pkl_path(w, h):
+  return MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
 
 
-def dm_warp_pkl_path(w, h, suffix=''):
-  return MODELS_DIR / f'dm_warp_{w}x{h}_tinygrad{suffix}.pkl'
+def dm_warp_pkl_path(w, h):
+  return MODELS_DIR / f'dm_warp_{w}x{h}_tinygrad.pkl'
 
 
 def warp_perspective_tinygrad(src_flat, M_inv, dst_shape, src_shape, stride_pad):
@@ -98,10 +95,8 @@ def make_frame_prepare(cam_w, cam_h, model_w, model_h):
 
 def make_update_img_input(frame_prepare, model_w, model_h):
   def update_img_input_tinygrad(tensor, frame, M_inv):
-    M_inv = M_inv.to(frame.device)
+    M_inv = M_inv.to(Device.DEFAULT)
     new_img = frame_prepare(frame, M_inv)
-    # with Context(JIT=2):
-    new_img = new_img.to(tensor.device)
     full_buffer = tensor[6:].cat(new_img, dim=0).contiguous()
     return full_buffer, Tensor.cat(full_buffer[:6], full_buffer[-6:], dim=0).contiguous().reshape(1, 12, model_h//2, model_w//2)
   return update_img_input_tinygrad
@@ -129,18 +124,18 @@ def make_warp_dm(cam_w, cam_h, dm_w, dm_h):
   return warp_dm
 
 
-def compile_modeld_warp(cam_w, cam_h, suffix=''):
+def compile_modeld_warp(cam_w, cam_h):
   model_w, model_h = MEDMODEL_INPUT_SIZE
   _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
 
-  print(f"Compiling modeld warp for {cam_w}x{cam_h}{suffix}...")
+  print(f"Compiling modeld warp for {cam_w}x{cam_h}...")
 
   frame_prepare = make_frame_prepare(cam_w, cam_h, model_w, model_h)
   update_both_imgs = make_update_both_imgs(frame_prepare, model_w, model_h)
   update_img_jit = TinyJit(update_both_imgs, prune=True)
 
-  full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize().to(BUFFER_DEVICE)
-  big_full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize().to(BUFFER_DEVICE)
+  full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize()
+  big_full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize()
   full_buffer_np = np.zeros(IMG_BUFFER_SHAPE, dtype=np.uint8)
   big_full_buffer_np = np.zeros(IMG_BUFFER_SHAPE, dtype=np.uint8)
 
@@ -169,7 +164,7 @@ def compile_modeld_warp(cam_w, cam_h, suffix=''):
     et = time.perf_counter()
     print(f"  [{i+1}/10] enqueue {(mt-st)*1e3:6.2f} ms -- total {(et-st)*1e3:6.2f} ms")
 
-  pkl_path = warp_pkl_path(cam_w, cam_h, suffix)
+  pkl_path = warp_pkl_path(cam_w, cam_h)
   with open(pkl_path, "wb") as f:
     pickle.dump(update_img_jit, f)
   print(f"  Saved to {pkl_path}")
@@ -178,11 +173,11 @@ def compile_modeld_warp(cam_w, cam_h, suffix=''):
   jit(*inputs)
 
 
-def compile_dm_warp(cam_w, cam_h, suffix=''):
+def compile_dm_warp(cam_w, cam_h):
   dm_w, dm_h = DM_INPUT_SIZE
   _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
 
-  print(f"Compiling DM warp for {cam_w}x{cam_h}{suffix}...")
+  print(f"Compiling DM warp for {cam_w}x{cam_h}...")
 
   warp_dm = make_warp_dm(cam_w, cam_h, dm_w, dm_h)
   warp_dm_jit = TinyJit(warp_dm, prune=True)
@@ -198,20 +193,17 @@ def compile_dm_warp(cam_w, cam_h, suffix=''):
     et = time.perf_counter()
     print(f"  [{i+1}/10] enqueue {(mt-st)*1e3:6.2f} ms -- total {(et-st)*1e3:6.2f} ms")
 
-  pkl_path = dm_warp_pkl_path(cam_w, cam_h, suffix)
+  pkl_path = dm_warp_pkl_path(cam_w, cam_h)
   with open(pkl_path, "wb") as f:
     pickle.dump(warp_dm_jit, f)
   print(f"  Saved to {pkl_path}")
 
 
-def run_and_save_pickle(modeld_only=False, suffix=''):
+def run_and_save_pickle():
   for cam_w, cam_h in CAMERA_CONFIGS:
-    compile_modeld_warp(cam_w, cam_h, suffix)
-    if not modeld_only:
-      compile_dm_warp(cam_w, cam_h, suffix)
+    compile_modeld_warp(cam_w, cam_h)
+    compile_dm_warp(cam_w, cam_h)
 
 
 if __name__ == "__main__":
-  USBGPU = 'USBGPU' in os.environ
-  suffix = '_usbgpu' if USBGPU else ''
-  run_and_save_pickle(modeld_only=USBGPU, suffix=suffix)
+  run_and_save_pickle()
