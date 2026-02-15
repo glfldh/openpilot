@@ -256,8 +256,8 @@ class HwmonReader:
     while not do_exit:
       try:
         read_time = time.monotonic() * 1000
-        voltage = int(HARDWARE.get_voltage() * 1000)
-        current = int(HARDWARE.get_current() * 1000)
+        voltage = HARDWARE.get_voltage()
+        current = HARDWARE.get_current()
         read_time = time.monotonic() * 1000 - read_time
         if read_time > 50:
           cloudlog.warning(f"reading hwmon took {read_time:.1f}ms")
