@@ -85,20 +85,16 @@ def get_hw_type_capnp(panda):
   return HW_TYPE_MAP.get(hw_type, log.PandaState.PandaType.unknown)
 
 
-def can_send(panda, sm, fake_send):
-  """Poll sendcan and forward messages to panda. Called from main loop."""
-  sm.update(0)
-  if not sm.updated['sendcan']:
-    return
-
-  # Don't send if older than 1 second
-  msg_time = sm.logMonoTime['sendcan']
-  cur_time = int(time.monotonic() * 1e9)
-  if (cur_time - msg_time) < 1e9 and not fake_send:
-    can_msgs = [(msg.address, msg.dat, msg.src) for msg in sm['sendcan']]
-    panda.can_send_many(can_msgs)
-  else:
-    cloudlog.error(f"sendcan too old to send: {cur_time}, {msg_time}")
+def can_send(panda, sendcan_sock, fake_send):
+  """Drain all pending sendcan messages and forward to panda."""
+  for evt in messaging.drain_sock(sendcan_sock):
+    # Don't send if older than 1 second
+    cur_time = int(time.monotonic() * 1e9)
+    if (cur_time - evt.logMonoTime) < 1e9 and not fake_send:
+      can_msgs = [(msg.address, msg.dat, msg.src) for msg in evt.sendcan]
+      panda.can_send_many(can_msgs)
+    else:
+      cloudlog.error(f"sendcan too old to send: {cur_time}, {evt.logMonoTime}")
 
 
 def can_recv(panda, pm):
@@ -443,7 +439,7 @@ def pandad_run(panda):
 
   params = Params()
   rk = Ratekeeper(100)
-  sendcan_sm = messaging.SubMaster(['sendcan'])
+  sendcan_sock = messaging.sub_sock('sendcan', conflate=False, timeout=0)
   sm = messaging.SubMaster(['selfdriveState'])
   pm = messaging.PubMaster(['can', 'pandaStates', 'peripheralState'])
   panda_safety = PandaSafety(panda)
@@ -458,7 +454,7 @@ def pandad_run(panda):
   # Main loop: single-threaded CAN recv/send and state processing
   while not do_exit and check_connected(panda):
     comms_healthy = can_recv(panda, pm)
-    can_send(panda, sendcan_sm, fake_send)
+    can_send(panda, sendcan_sock, fake_send)
 
     # Process peripheral state at 20 Hz
     if rk.frame % 5 == 0:
