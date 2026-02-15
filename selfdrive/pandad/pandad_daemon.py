@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Python pandad daemon - replaces the C++ pandad binary.
 
-This module implements the main pandad daemon loop that:
-- Receives CAN messages from panda and publishes to 'can' topic
-- Subscribes to 'sendcan' and forwards messages to panda
-- Publishes panda health/state at 10Hz to 'pandaStates'
-- Publishes peripheral state at 2Hz to 'peripheralState'
-- Manages safety mode configuration
-- Controls IR power and fan speed
+Single-threaded design: the main 100Hz loop handles CAN recv, CAN send,
+health/state publishing, safety mode, IR power, and fan speed.
+
+The only background thread is for reading hwmon (voltage/current) since
+that can block indefinitely and is best-effort.
 """
 import os
 import threading
@@ -87,28 +85,20 @@ def get_hw_type_capnp(panda):
   return HW_TYPE_MAP.get(hw_type, log.PandaState.PandaType.unknown)
 
 
-def can_send_thread(panda, fake_send):
-  """Thread that receives sendcan messages and forwards to panda."""
-  try:
-    sm = messaging.SubMaster(['sendcan'])
+def can_send(panda, sm, fake_send):
+  """Poll sendcan and forward messages to panda. Called from main loop."""
+  sm.update(0)
+  if not sm.updated['sendcan']:
+    return
 
-    while not do_exit and panda.connected:
-      sm.update(100)
-      if not sm.updated['sendcan']:
-        continue
-
-      # Don't send if older than 1 second
-      msg_time = sm.logMonoTime['sendcan']
-      cur_time = int(time.monotonic() * 1e9)
-      if (cur_time - msg_time) < 1e9 and not fake_send:
-        can_msgs = []
-        for msg in sm['sendcan']:
-          can_msgs.append((msg.address, msg.dat, msg.src))
-        panda.can_send_many(can_msgs)
-      else:
-        cloudlog.error(f"sendcan too old to send: {cur_time}, {msg_time}")
-  except Exception:
-    cloudlog.exception("can_send_thread crashed")
+  # Don't send if older than 1 second
+  msg_time = sm.logMonoTime['sendcan']
+  cur_time = int(time.monotonic() * 1e9)
+  if (cur_time - msg_time) < 1e9 and not fake_send:
+    can_msgs = [(msg.address, msg.dat, msg.src) for msg in sm['sendcan']]
+    panda.can_send_many(can_msgs)
+  else:
+    cloudlog.error(f"sendcan too old to send: {cur_time}, {msg_time}")
 
 
 def can_recv(panda, pm):
@@ -247,7 +237,43 @@ def send_panda_states(pm, panda, hw_type, is_onroad, spoofing_started):
   return ignition_local
 
 
-def send_peripheral_state(panda, pm, hw_type):
+class HwmonReader:
+  """Background thread for reading hwmon voltage/current (can block indefinitely)."""
+
+  def __init__(self):
+    self.voltage = 0
+    self.current = 0
+    self._lock = threading.Lock()
+    self._thread = None
+
+  def start(self):
+    if PC:
+      return
+    self._thread = threading.Thread(target=self._run, daemon=True)
+    self._thread.start()
+
+  def _run(self):
+    while not do_exit:
+      try:
+        read_time = time.monotonic() * 1000
+        voltage = int(HARDWARE.get_voltage() * 1000)
+        current = int(HARDWARE.get_current() * 1000)
+        read_time = time.monotonic() * 1000 - read_time
+        if read_time > 50:
+          cloudlog.warning(f"reading hwmon took {read_time:.1f}ms")
+        with self._lock:
+          self.voltage = voltage
+          self.current = current
+      except Exception:
+        cloudlog.exception("hwmon read failed")
+      time.sleep(0.5)
+
+  def get(self):
+    with self._lock:
+      return self.voltage, self.current
+
+
+def send_peripheral_state(panda, pm, hw_type, hwmon_reader):
   """Build and publish peripheralState message at 2Hz."""
   msg = messaging.new_message('peripheralState')
   msg.valid = True
@@ -255,13 +281,7 @@ def send_peripheral_state(panda, pm, hw_type):
   ps = msg.peripheralState
   ps.pandaType = hw_type
 
-  read_time = time.monotonic() * 1000
-  voltage = int(HARDWARE.get_voltage() * 1000) if not PC else 0
-  current = int(HARDWARE.get_current() * 1000) if not PC else 0
-  read_time = time.monotonic() * 1000 - read_time
-  if read_time > 50:
-    cloudlog.warning(f"reading hwmon took {read_time:.1f}ms")
-
+  voltage, current = hwmon_reader.get()
   ps.voltage = voltage
   ps.current = current
 
@@ -414,31 +434,31 @@ class PandaSafety:
 
 
 def pandad_run(panda):
-  """Main daemon loop running at 100Hz."""
+  """Main daemon loop running at 100Hz. Single-threaded except for hwmon."""
   global do_exit
 
   no_fan_control = os.getenv("NO_FAN_CONTROL") is not None
   spoofing_started = os.getenv("STARTED") is not None
   fake_send = os.getenv("FAKESEND") is not None
 
-  # Start the CAN send thread
-  send_thread = threading.Thread(target=can_send_thread, args=(panda, fake_send), daemon=True)
-  send_thread.start()
-
   params = Params()
   rk = Ratekeeper(100)
+  sendcan_sm = messaging.SubMaster(['sendcan'])
   sm = messaging.SubMaster(['selfdriveState'])
   pm = messaging.PubMaster(['can', 'pandaStates', 'peripheralState'])
   panda_safety = PandaSafety(panda)
   peripheral_processor = PeripheralStateProcessor()
+  hwmon_reader = HwmonReader()
+  hwmon_reader.start()
   hw_type = get_hw_type_capnp(panda)
   engaged = False
   is_onroad = False
   comms_healthy = True
 
-  # Main loop: receive CAN data and process states
+  # Main loop: single-threaded CAN recv/send and state processing
   while not do_exit and check_connected(panda):
     comms_healthy = can_recv(panda, pm)
+    can_send(panda, sendcan_sm, fake_send)
 
     # Process peripheral state at 20 Hz
     if rk.frame % 5 == 0:
@@ -465,7 +485,7 @@ def pandad_run(panda):
 
     # Send out peripheralState at 2Hz
     if rk.frame % 50 == 0:
-      send_peripheral_state(panda, pm, hw_type)
+      send_peripheral_state(panda, pm, hw_type, hwmon_reader)
 
     # Forward logs from panda to cloudlog if available
     try:
@@ -486,8 +506,6 @@ def pandad_run(panda):
   if is_onroad and not engaged:
     if panda.connected:
       panda.set_safety_mode(CarParams.SafetyModel.noOutput)
-
-  send_thread.join(timeout=1.0)
 
 
 def pandad_main_thread(serial=""):
