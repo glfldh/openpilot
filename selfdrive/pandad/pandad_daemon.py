@@ -17,6 +17,7 @@ from openpilot.common.realtime import Ratekeeper, config_realtime_process
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware import HARDWARE, PC
+from opendbc.car.structs import CarParams
 from panda import Panda
 
 PANDA_CAN_CNT = 3
@@ -195,7 +196,6 @@ def send_panda_states(pm, panda, hw_type, is_onroad, spoofing_started):
   ignition_local = health['ignition_line'] != 0 or health['ignition_can'] != 0
 
   # Make sure CAN buses are live: safety_setter_thread does not work if Panda CAN are silent
-  from opendbc.car.structs import CarParams
   if health['safety_mode'] == int(CarParams.SafetyModel.silent):
     panda.set_safety_mode(CarParams.SafetyModel.noOutput)
 
@@ -387,7 +387,6 @@ class PandaSafety:
       self.log_once = False
 
   def _update_multiplexing_mode(self):
-    from opendbc.car.structs import CarParams
     # Initialize to ELM327 without OBD multiplexing for initial fingerprinting
     if not self.initialized:
       self.prev_obd_multiplexing = False
@@ -415,7 +414,6 @@ class PandaSafety:
     return self.params.get("CarParams")
 
   def _set_safety_mode(self, params_string):
-    from opendbc.car.structs import CarParams
     with CarParams.from_bytes(params_string) as car_params:
       safety_configs = car_params.safetyConfigs
       alternative_experience = car_params.alternativeExperience
@@ -498,7 +496,6 @@ def pandad_run(panda):
     rk.keep_time()
 
   # Close relay on exit to prevent a fault
-  from opendbc.car.structs import CarParams
   if is_onroad and not engaged:
     if panda.connected:
       panda.set_safety_mode(CarParams.SafetyModel.noOutput)
