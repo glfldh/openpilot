@@ -320,10 +320,9 @@ class Tici(HardwareBase):
   def set_ship_mode(self):
     # TODO: move this to AGNOS
     # set ship-mode as last step of shutdown to avoid hard poweroff
-    script = "/usr/lib/systemd/system-shutdown/ship-mode.sh"
-    if not os.path.exists(script):
-      sudo_write("#!/bin/sh\necho 1 > /sys/class/power_supply/battery/set_ship_mode\n", script)
-      os.system(f"sudo chmod +x {script}")
+    dest = "/usr/lib/systemd/system-shutdown/ship-mode.sh"
+    if not os.path.exists(dest):
+      os.system(f"sudo cp {Path(__file__).parent / 'ship-mode.sh'} {dest}")
 
   def shutdown(self):
     if self.get_device_type() == "mici":
