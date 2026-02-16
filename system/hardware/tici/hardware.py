@@ -318,12 +318,11 @@ class Tici(HardwareBase):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
   def set_ship_mode(self):
-    sudo_write("1", "/sys/class/power_supply/battery/set_ship_mode")
+    sudo_write("1", "/sys/module/qpnp_power_on/parameters/ship_mode_en")
 
   def shutdown(self):
     if self.get_device_type() == "mici":
-      self.set_ship_mode()  # switch off VPH_PWR
-      gpio_set(GPIO.SOM_ST_IO, 0)  # stop fan for ship mode
+      self.set_ship_mode()  # switch off VPH_PWR after poweroff
     os.system("sudo poweroff")
 
   def get_thermal_config(self):
