@@ -11,9 +11,11 @@ if USBGPU:
   # os.environ['AMD_AQL'] = '1' hangs on workstation
   os.environ['AMD_SDMA_BIND'] = '1'
   # os.environ['FUSE_OPTIM'] = '1' ? to try
+  os.environ['AMD_LLVM'] = '1' # to compile buffer shift jit
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
 from tinygrad import Device
+from tinygrad.engine.jit import TinyJit
 import time
 import pickle
 import numpy as np
@@ -52,6 +54,18 @@ MIN_LAT_CONTROL_SPEED = 0.3
 
 IMG_QUEUE_SHAPE = (6*(ModelConstants.MODEL_RUN_FREQ//ModelConstants.MODEL_CONTEXT_FREQ + 1), 128, 256)
 assert IMG_QUEUE_SHAPE[0] == 30
+
+
+def make_update_bufs(buf, big_buf):
+  _, H, W = buf.shape
+  @TinyJit
+  def update_bufs(y, y_big):
+    buf.assign(buf[6:].cat(y, dim=0)).realize()
+    big_buf.assign(big_buf[6:].cat(y_big, dim=0)).realize()
+    img_pair = buf[:6].cat(buf[-6:], dim=0).contiguous().reshape(1, 12, H, W)
+    big_img_pair = big_buf[:6].cat(big_buf[-6:], dim=0).contiguous().reshape(1, 12, H, W)
+    return img_pair, big_img_pair
+  return update_bufs
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
@@ -172,8 +186,9 @@ class ModelState:
       self.full_input_queues.update_dtypes_and_shapes({k: self.numpy_inputs[k].dtype}, {k: self.numpy_inputs[k].shape})
     self.full_input_queues.reset()
 
-    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize(),
-                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize()}
+    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=Device.DEFAULT).contiguous().realize(),
+                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=Device.DEFAULT).contiguous().realize()}
+    self.update_bufs = make_update_bufs(self.img_queues['img'], self.img_queues['big_img'])
     self.full_frames : dict[str, Tensor] = {}
     self._blob_cache : dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
@@ -183,7 +198,7 @@ class ModelState:
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser(ignore_missing=True)
     self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
-    self.update_imgs = None
+    self.warp_imgs = None
     with open(VISION_PKL_PATH, "rb") as f:
       self.vision_run = pickle.load(f)
 
@@ -208,13 +223,13 @@ class ModelState:
     inputs['desire_pulse'][0] = 0
     new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
     self.prev_desire[:] = inputs['desire_pulse']
-    if self.update_imgs is None:
+    if self.warp_imgs is None:
       for key in bufs.keys():
         w, h = bufs[key].width, bufs[key].height
         self.frame_buf_params[key] = get_nv12_info(w, h)
       warp_path = MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
       with open(warp_path, "rb") as f:
-        self.update_imgs = pickle.load(f)
+        self.warp_imgs = pickle.load(f)
 
     for key in bufs.keys():
       ptr = bufs[key].data.ctypes.data
@@ -227,25 +242,27 @@ class ModelState:
       self.transforms_np[key][:,:] = transforms[key][:,:]
 
     t0 = time.perf_counter()
-    out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
-                           self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
-    self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
-    Device[WARP_DEVICE].synchronize()
+    warped_img, warped_big_img = self.warp_imgs(self.full_frames['img'], self.transforms['img'],
+                                                 self.full_frames['big_img'], self.transforms['big_img'])
+    warped_img.realize()
+    warped_big_img.realize()
+
+    warped_img = warped_img.to(Device.DEFAULT)
+    warped_big_img = warped_big_img.to(Device.DEFAULT)
+    # Device[Device.DEFAULT].synchronize()
 
     t1 = time.perf_counter()
-    vision_inputs = {'img': out[1], 'big_img': out[3]}
-    if USBGPU:
-      vision_inputs = {k: v.to(Device.DEFAULT) for k, v in vision_inputs.items()}
-      Tensor.realize(*vision_inputs.values())
-
-    Device[Device.DEFAULT].synchronize()
+    vision_inputs = {}
+    vision_inputs['img'], vision_inputs['big_img'] = self.update_bufs(warped_img, warped_big_img)
+    Tensor.realize(*vision_inputs.values())
+    # Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()
 
     if prepare_only:
       return None
 
     self.vision_output = self.vision_run(**vision_inputs).contiguous().realize()
-    Device[Device.DEFAULT].synchronize()
+    # Device[Device.DEFAULT].synchronize()
     t3 = time.perf_counter()
 
     self.vision_output = self.vision_output.uop.base.buffer.numpy().flatten()
@@ -266,7 +283,9 @@ class ModelState:
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
-    print(f'Model timings: warp {1000*(t1 - t0):.2f} ms, copy in {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
+    t5 = time.perf_counter()
+    # print(f'Model timings: warp + copy in{1000*(t1 - t0):.2f} ms, shift buffers {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
+    print(f'Model timings: {1000*(t5 - t0):.2f} ms')
 
     return combined_outputs_dict
 
