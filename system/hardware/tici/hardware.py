@@ -317,12 +317,7 @@ class Tici(HardwareBase):
   def get_som_power_draw(self):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
-  def set_ship_mode(self):
-    sudo_write("1", "/sys/class/power_supply/battery/set_ship_mode")
-
   def shutdown(self):
-    if self.get_device_type() == "mici":
-      self.set_ship_mode()  # switch off VPH_PWR
     os.system("sudo poweroff")
 
   def get_thermal_config(self):
@@ -413,6 +408,12 @@ class Tici(HardwareBase):
 
     # Allow hardwared to write engagement status to kmsg
     os.system("sudo chmod a+w /dev/kmsg")
+
+    # Install ship mode shutdown script for mici (activates ship mode at the very end of poweroff)
+    ship_mode_script = Path(__file__).parent / 'ship-mode.sh'
+    ship_mode_dest = "/usr/lib/systemd/system-shutdown/ship-mode.sh"
+    if not os.path.exists(ship_mode_dest):
+      os.system(f"sudo cp {ship_mode_script} {ship_mode_dest}")
 
     # Ensure fan gpio is enabled so fan runs until shutdown, also turned on at boot by the ABL
     gpio_init(GPIO.SOM_ST_IO, True)
