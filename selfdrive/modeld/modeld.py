@@ -10,6 +10,7 @@ if USBGPU:
   os.environ['GRAPH_ONE_KERNEL'] = '1'
   # os.environ['AMD_AQL'] = '1' hangs on workstation
   os.environ['AMD_SDMA_BIND'] = '1'
+  # os.environ['FUSE_OPTIM'] = '1' ? to try
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
 from tinygrad import Device
