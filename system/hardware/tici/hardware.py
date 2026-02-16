@@ -409,11 +409,13 @@ class Tici(HardwareBase):
     # Allow hardwared to write engagement status to kmsg
     os.system("sudo chmod a+w /dev/kmsg")
 
-    # Install ship mode shutdown script for mici (activates ship mode at the very end of poweroff)
-    ship_mode_script = Path(__file__).parent / 'ship-mode.sh'
-    ship_mode_dest = "/usr/lib/systemd/system-shutdown/ship-mode.sh"
-    if not os.path.exists(ship_mode_dest):
-      os.system(f"sudo cp {ship_mode_script} {ship_mode_dest}")
+    # Install ship mode shutdown script for mici
+    script = Path(__file__).parent / 'ship-mode.sh'
+    dest = "/usr/lib/systemd/system-shutdown/ship-mode.sh"
+    if not os.path.exists(dest):
+      os.system("sudo mount -o remount,rw /")
+      os.system(f"sudo cp {script} {dest}")
+      os.system("sudo mount -o remount,ro /")
 
     # Ensure fan gpio is enabled so fan runs until shutdown, also turned on at boot by the ABL
     gpio_init(GPIO.SOM_ST_IO, True)
