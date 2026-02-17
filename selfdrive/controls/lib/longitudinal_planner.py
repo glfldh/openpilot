@@ -25,9 +25,9 @@ ACCEL_CLIP_JERK_MAX = 1.0
 K_CRUISE = 0.27
 TAU_CRUISE_SMOOTH = 1.0
 
-K_P_LEAD = 1.5
-K_D_LEAD = 4.5
-TAU_LEAD_SMOOTH = 0.2
+K_P_LEAD = 2.0
+K_D_LEAD = 5.5
+TAU_LEAD_SMOOTH = 0.25
 
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
@@ -98,7 +98,7 @@ def get_follow_distance(v_ego, v_lead, t_follow):
 
 def lead_controller(v_ego, v_lead, actual_distance, accel_clip, output_a_target, t_follow):
   desired_distance = get_follow_distance(v_ego, v_lead, t_follow)
-  e_d = (actual_distance - desired_distance) / (v_ego + 10.0)
+  e_d = (actual_distance - desired_distance) / (v_ego + 5.0)
   e_v = (v_lead - v_ego) / (v_ego + 10.0)
   lead_accel = K_P_LEAD * e_d + K_D_LEAD * e_v
   lead_accel = np.clip(lead_accel, accel_clip[0], accel_clip[1])
