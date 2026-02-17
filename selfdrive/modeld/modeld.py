@@ -60,8 +60,9 @@ def make_update_bufs(buf, big_buf):
   _, H, W = buf.shape
   @TinyJit
   def update_bufs(y, y_big):
-    buf.assign(buf[6:].cat(y, dim=0)).realize()
-    big_buf.assign(big_buf[6:].cat(y_big, dim=0)).realize()
+    buf.assign(buf[6:].cat(y, dim=0))
+    big_buf.assign(big_buf[6:].cat(y_big, dim=0))
+    Tensor.realize(buf, big_buf)
     img_pair = buf[:6].cat(buf[-6:], dim=0).contiguous().reshape(1, 12, H, W)
     big_img_pair = big_buf[:6].cat(big_buf[-6:], dim=0).contiguous().reshape(1, 12, H, W)
     return img_pair, big_img_pair
@@ -243,20 +244,18 @@ class ModelState:
 
     warped_img, warped_big_img = self.warp_imgs(self.full_frames['img'], self.transforms['img'],
                                                  self.full_frames['big_img'], self.transforms['big_img'])
-    warped_img.realize()
-    warped_big_img.realize()
     Device[WARP_DEVICE].synchronize()
 
     t0 = time.perf_counter()
 
-    warped_img = warped_img.to(Device.DEFAULT).realize()
-    warped_big_img = warped_big_img.to(Device.DEFAULT).realize()
+    warped_img = warped_img.to(Device.DEFAULT)
+    warped_big_img = warped_big_img.to(Device.DEFAULT)
+    Tensor.realize(warped_img, warped_big_img)
     Device[Device.DEFAULT].synchronize()
 
     t1 = time.perf_counter()
     vision_inputs = {}
     vision_inputs['img'], vision_inputs['big_img'] = self.update_bufs(warped_img, warped_big_img)
-    Tensor.realize(*vision_inputs.values())
     Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()
 
