@@ -241,28 +241,30 @@ class ModelState:
     for key in bufs.keys():
       self.transforms_np[key][:,:] = transforms[key][:,:]
 
-    t0 = time.perf_counter()
     warped_img, warped_big_img = self.warp_imgs(self.full_frames['img'], self.transforms['img'],
                                                  self.full_frames['big_img'], self.transforms['big_img'])
     warped_img.realize()
     warped_big_img.realize()
+    Device[WARP_DEVICE].synchronize()
 
-    warped_img = warped_img.to(Device.DEFAULT)
-    warped_big_img = warped_big_img.to(Device.DEFAULT)
-    # Device[Device.DEFAULT].synchronize()
+    t0 = time.perf_counter()
+
+    warped_img = warped_img.to(Device.DEFAULT).realize()
+    warped_big_img = warped_big_img.to(Device.DEFAULT).realize()
+    Device[Device.DEFAULT].synchronize()
 
     t1 = time.perf_counter()
     vision_inputs = {}
     vision_inputs['img'], vision_inputs['big_img'] = self.update_bufs(warped_img, warped_big_img)
     Tensor.realize(*vision_inputs.values())
-    # Device[Device.DEFAULT].synchronize()
+    Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()
 
     if prepare_only:
       return None
 
     self.vision_output = self.vision_run(**vision_inputs).contiguous().realize()
-    # Device[Device.DEFAULT].synchronize()
+    Device[Device.DEFAULT].synchronize()
     t3 = time.perf_counter()
 
     self.vision_output = self.vision_output.uop.base.buffer.numpy().flatten()
@@ -283,9 +285,7 @@ class ModelState:
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
-    t5 = time.perf_counter()
-    # print(f'Model timings: warp + copy in{1000*(t1 - t0):.2f} ms, shift buffers {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
-    print(f'Model timings: {1000*(t5 - t0):.2f} ms')
+    print(f'Model timings: copy in{1000*(t1 - t0):.2f} ms, shift buffers {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
 
     return combined_outputs_dict
 
