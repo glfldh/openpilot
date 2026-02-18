@@ -22,6 +22,9 @@ CAMERA_CONFIGS = [
 UV_SCALE_MATRIX = np.array([[0.5, 0, 0], [0, 0.5, 0], [0, 0, 1]], dtype=np.float32)
 UV_SCALE_MATRIX_INV = np.linalg.inv(UV_SCALE_MATRIX)
 
+IMG_BUFFER_SHAPE = (30, MEDMODEL_INPUT_SIZE[1] // 2, MEDMODEL_INPUT_SIZE[0] // 2)
+
+
 def warp_pkl_path(w, h):
   return MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
 
@@ -90,14 +93,24 @@ def make_frame_prepare(cam_w, cam_h, model_w, model_h):
   return frame_prepare_tinygrad
 
 
-def make_warp_both_imgs(frame_prepare):
-  def warp_both_imgs(new_img, M_inv, new_big_img, M_inv_big):
+def make_update_img_input(frame_prepare, model_w, model_h):
+  def update_img_input_tinygrad(tensor, frame, M_inv):
     M_inv = M_inv.to(Device.DEFAULT)
-    M_inv_big = M_inv_big.to(Device.DEFAULT)
-    img = frame_prepare(new_img, M_inv)
-    big_img = frame_prepare(new_big_img, M_inv_big)
-    return img, big_img
-  return warp_both_imgs
+    new_img = frame_prepare(frame, M_inv)
+    full_buffer = tensor[6:].cat(new_img, dim=0).contiguous()
+    return full_buffer, Tensor.cat(full_buffer[:6], full_buffer[-6:], dim=0).contiguous().reshape(1, 12, model_h//2, model_w//2)
+  return update_img_input_tinygrad
+
+
+def make_update_both_imgs(frame_prepare, model_w, model_h):
+  update_img = make_update_img_input(frame_prepare, model_w, model_h)
+
+  def update_both_imgs_tinygrad(calib_img_buffer, new_img, M_inv,
+                                calib_big_img_buffer, new_big_img, M_inv_big):
+    calib_img_buffer, calib_img_pair = update_img(calib_img_buffer, new_img, M_inv)
+    calib_big_img_buffer, calib_big_img_pair = update_img(calib_big_img_buffer, new_big_img, M_inv_big)
+    return calib_img_buffer, calib_img_pair, calib_big_img_buffer, calib_big_img_pair
+  return update_both_imgs_tinygrad
 
 
 def make_warp_dm(cam_w, cam_h, dm_w, dm_h):
@@ -118,22 +131,34 @@ def compile_modeld_warp(cam_w, cam_h):
   print(f"Compiling modeld warp for {cam_w}x{cam_h}...")
 
   frame_prepare = make_frame_prepare(cam_w, cam_h, model_w, model_h)
-  warp_both = make_warp_both_imgs(frame_prepare)
-  warp_jit = TinyJit(warp_both, prune=True)
+  update_both_imgs = make_update_both_imgs(frame_prepare, model_w, model_h)
+  update_img_jit = TinyJit(update_both_imgs, prune=True)
+
+  full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize()
+  big_full_buffer = Tensor.zeros(IMG_BUFFER_SHAPE, dtype='uint8').contiguous().realize()
+  full_buffer_np = np.zeros(IMG_BUFFER_SHAPE, dtype=np.uint8)
+  big_full_buffer_np = np.zeros(IMG_BUFFER_SHAPE, dtype=np.uint8)
 
   for i in range(10):
     new_frame_np = (32 * np.random.randn(yuv_size).astype(np.float32) + 128).clip(0, 255).astype(np.uint8)
+    img_inputs = [full_buffer,
+                  Tensor.from_blob(new_frame_np.ctypes.data, (yuv_size,), dtype='uint8').realize(),
+                  Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY')]
     new_big_frame_np = (32 * np.random.randn(yuv_size).astype(np.float32) + 128).clip(0, 255).astype(np.uint8)
-    inputs = [Tensor.from_blob(new_frame_np.ctypes.data, (yuv_size,), dtype='uint8').realize(),
-              Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY'),
-              Tensor.from_blob(new_big_frame_np.ctypes.data, (yuv_size,), dtype='uint8').realize(),
-              Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY')]
+    big_img_inputs = [big_full_buffer,
+                      Tensor.from_blob(new_big_frame_np.ctypes.data, (yuv_size,), dtype='uint8').realize(),
+                      Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY')]
+    inputs = img_inputs + big_img_inputs
     Device.default.synchronize()
 
+    inputs_np = [x.numpy() for x in inputs]
+    inputs_np[0] = full_buffer_np
+    inputs_np[3] = big_full_buffer_np
+
     st = time.perf_counter()
-    out = warp_jit(*inputs)
-    out[0].realize()
-    out[1].realize()
+    out = update_img_jit(*inputs)
+    full_buffer = out[0].contiguous().realize().clone()
+    big_full_buffer = out[2].contiguous().realize().clone()
     mt = time.perf_counter()
     Device.default.synchronize()
     et = time.perf_counter()
@@ -141,7 +166,7 @@ def compile_modeld_warp(cam_w, cam_h):
 
   pkl_path = warp_pkl_path(cam_w, cam_h)
   with open(pkl_path, "wb") as f:
-    pickle.dump(warp_jit, f)
+    pickle.dump(update_img_jit, f)
   print(f"  Saved to {pkl_path}")
 
   jit = pickle.load(open(pkl_path, "rb"))
