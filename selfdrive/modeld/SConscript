@@ -57,7 +57,7 @@ if "USBGPU" in os.environ:
     # bp = tg_compile(flags, "big_driving_policy")
     bv = tg_compile(flags, "big_driving_vision")
 
-    usbgpu_cmd = f'{tg_flags} JIT=2 AMD_IFACE=USB AMD_LLVM=1 USBGPU=1 python3 {Dir("#selfdrive/modeld").abspath}/compile_warp.py'
+    usbgpu_cmd = f'{tg_flags} AMD_IFACE=USB AMD_LLVM=1 USBGPU=1 python3 {Dir("#selfdrive/modeld").abspath}/compile_warp.py'
     usbgpu_warp_targets = []
     for cam in [_ar_ox_fisheye, _os_fisheye]:
       w, h = cam.width, cam.height

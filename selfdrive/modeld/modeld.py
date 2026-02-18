@@ -231,27 +231,23 @@ class ModelState:
       self.transforms_np[key][:,:] = transforms[key][:,:]
 
     t0 = time.perf_counter()
-    print('before warp')
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
-    self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
-    Device.DEFAULT.synchronize()
-
-    t1 = time.perf_counter()
+    self.img_queues['img'], self.img_queues['big_img'] = out[0], out[2]
     vision_inputs = {'img': out[1], 'big_img': out[3]}
 
     Device[Device.DEFAULT].synchronize()
-    t2 = time.perf_counter()
+    t1 = time.perf_counter()
 
     if prepare_only:
       return None
 
     self.vision_output = self.vision_run(**vision_inputs).contiguous().realize()
     Device[Device.DEFAULT].synchronize()
-    t3 = time.perf_counter()
+    t2 = time.perf_counter()
 
     self.vision_output = self.vision_output.uop.base.buffer.numpy().flatten()
-    t4 = time.perf_counter()
+    t3 = time.perf_counter()
 
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
@@ -269,7 +265,7 @@ class ModelState:
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
-    print(f'Model timings: warp {1000*(t1 - t0):.2f} ms, copy in {1000*(t2 - t1):.2f} ms, vision {1000*(t3 - t2):.2f} ms, copy out {1000*(t4 - t3):.2f} ms')
+    print(f'Model timings: warp + copy in {1000*(t1 - t0):.2f} ms, vision {1000*(t2 - t1):.2f} ms, copy out {1000*(t3 - t2):.2f} ms')
 
     return combined_outputs_dict
 
