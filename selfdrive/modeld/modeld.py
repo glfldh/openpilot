@@ -6,11 +6,11 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+  os.environ['AMD_LLVM'] = '1'
+  # perf
   os.environ['JIT_BATCH_SIZE'] = '0'
   os.environ['GRAPH_ONE_KERNEL'] = '1'
-  # os.environ['AMD_AQL'] = '1' hangs on workstation
   os.environ['AMD_SDMA_BIND'] = '1'
-  # os.environ['FUSE_OPTIM'] = '1' ? to try
 WARP_DEVICE = 'QCOM' if TICI else 'CPU'
 from tinygrad.tensor import Tensor
 from tinygrad import Device
@@ -172,8 +172,8 @@ class ModelState:
       self.full_input_queues.update_dtypes_and_shapes({k: self.numpy_inputs[k].dtype}, {k: self.numpy_inputs[k].shape})
     self.full_input_queues.reset()
 
-    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize().to(Device.DEFAULT),
-                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize().to(Device.DEFAULT)}
+    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
+                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
     self.full_frames : dict[str, Tensor] = {}
     self._blob_cache : dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
@@ -184,6 +184,7 @@ class ModelState:
     self.parser = Parser(ignore_missing=True)
     self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
     self.update_imgs = None
+
     with open(VISION_PKL_PATH, "rb") as f:
       self.vision_run = pickle.load(f)
 
@@ -233,7 +234,7 @@ class ModelState:
     t0 = time.perf_counter()
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
-    self.img_queues['img'], self.img_queues['big_img'] = out[0], out[2]
+    self.img_queues['img'], self.img_queues['big_img'] = out[0].clone(), out[2].clone()
     vision_inputs = {'img': out[1], 'big_img': out[3]}
 
     Device[Device.DEFAULT].synchronize()

@@ -154,6 +154,7 @@ def compile_modeld_warp(cam_w, cam_h, suffix=''):
                       Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY')]
     inputs = img_inputs + big_img_inputs
     Device.default.synchronize()
+    Device[BUFFER_DEVICE].synchronize()
 
     inputs_np = [x.numpy() for x in inputs]
     inputs_np[0] = full_buffer_np
@@ -165,6 +166,7 @@ def compile_modeld_warp(cam_w, cam_h, suffix=''):
     big_full_buffer = out[2].contiguous().realize().clone()
     mt = time.perf_counter()
     Device.default.synchronize()
+    Device[BUFFER_DEVICE].synchronize()
     et = time.perf_counter()
     print(f"  [{i+1}/10] enqueue {(mt-st)*1e3:6.2f} ms -- total {(et-st)*1e3:6.2f} ms")
 
