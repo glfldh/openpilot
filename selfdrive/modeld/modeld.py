@@ -172,8 +172,8 @@ class ModelState:
       self.full_input_queues.update_dtypes_and_shapes({k: self.numpy_inputs[k].dtype}, {k: self.numpy_inputs[k].shape})
     self.full_input_queues.reset()
 
-    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize(),
-                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize()}
+    self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize().to(Device.DEFAULT),
+                       'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8', device=WARP_DEVICE).contiguous().realize().to(Device.DEFAULT)}
     self.full_frames : dict[str, Tensor] = {}
     self._blob_cache : dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
@@ -212,9 +212,13 @@ class ModelState:
       for key in bufs.keys():
         w, h = bufs[key].width, bufs[key].height
         self.frame_buf_params[key] = get_nv12_info(w, h)
-      warp_path = MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
+      if USBGPU:
+        warp_path = MODELS_DIR / f'warp_{w}x{h}_tinygrad_usbgpu.pkl'
+      else:
+        warp_path = MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
       with open(warp_path, "rb") as f:
         self.update_imgs = pickle.load(f)
+      print(f'warp loaded {warp_path}')
 
     for key in bufs.keys():
       ptr = bufs[key].data.ctypes.data
@@ -227,6 +231,7 @@ class ModelState:
       self.transforms_np[key][:,:] = transforms[key][:,:]
 
     t0 = time.perf_counter()
+    print('before warp')
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
     self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
@@ -234,9 +239,6 @@ class ModelState:
 
     t1 = time.perf_counter()
     vision_inputs = {'img': out[1], 'big_img': out[3]}
-    if USBGPU:
-      vision_inputs = {k: v.to(Device.DEFAULT) for k, v in vision_inputs.items()}
-      Tensor.realize(*vision_inputs.values())
 
     Device[Device.DEFAULT].synchronize()
     t2 = time.perf_counter()

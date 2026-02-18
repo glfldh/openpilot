@@ -56,6 +56,14 @@ if "USBGPU" in os.environ:
     flags = "DEV=AMD AMD_IFACE=USB AMD_LLVM=1 NOLOCALS=0 IMAGE=0 GRAPH_ONE_KERNEL=1" # TODO GRAPH_ONE_KERNEL is runtime only?
     # bp = tg_compile(flags, "big_driving_policy")
     bv = tg_compile(flags, "big_driving_vision")
-    lenv.SideEffect('lock', [bv])  # tg doesn't support multi-process so build serially
+
+    usbgpu_cmd = f'{tg_flags} JIT=2 AMD_IFACE=USB AMD_LLVM=1 USBGPU=1 python3 {Dir("#selfdrive/modeld").abspath}/compile_warp.py'
+    usbgpu_warp_targets = []
+    for cam in [_ar_ox_fisheye, _os_fisheye]:
+      w, h = cam.width, cam.height
+      usbgpu_warp_targets.append(File(f"models/warp_{w}x{h}_tinygrad_usbgpu.pkl").abspath)
+    usbgpu_warps = lenv.Command(usbgpu_warp_targets, tinygrad_files + script_files, usbgpu_cmd)
+
+    lenv.SideEffect('lock', [bv, usbgpu_warps])  # tg doesn't support multi-process so build serially
   else:
     print("USB GPU not detected... skipping")
