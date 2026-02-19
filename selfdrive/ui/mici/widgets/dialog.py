@@ -133,9 +133,8 @@ class BigConfirmationDialogV2(BigDialogBase):
     live_energy = max(self._slider.fx_energy, self._slider.slider_percentage)
     backdrop_rect = rl.Rectangle(self._rect.x + 7, self._rect.y + 7, self._rect.width - 14, self._rect.height - 14)
     rl.draw_rectangle_rounded(backdrop_rect, 0.1, 18, rl.Color(6, 10, 20, int(170 + 40 * intro_ease)))
-    top_alpha = int(255 * (0.05 + 0.13 * live_energy) * (1.0 - 0.35 * outro_ease))
-    glow_rect = rl.Rectangle(backdrop_rect.x, backdrop_rect.y, backdrop_rect.width, backdrop_rect.height * 0.75)
-    rl.draw_rectangle_rounded(glow_rect, 0.1, 18, rl.Color(114, 192, 255, top_alpha))
+    top_alpha = int(255 * (0.03 + 0.09 * live_energy) * (1.0 - 0.35 * outro_ease))
+    rl.draw_rectangle_rounded(backdrop_rect, 0.1, 18, rl.Color(114, 192, 255, top_alpha))
 
     # Dialog animate in/out transform.
     scale = (0.92 + 0.08 * intro_ease) * (1.0 - 0.06 * outro_ease)
