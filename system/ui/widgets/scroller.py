@@ -40,6 +40,7 @@ HORIZONTAL_STRETCH_MAX = 0.10
 HORIZONTAL_STRETCH_SMOOTH_ALPHA = 0.18
 HORIZONTAL_STRETCH_AXIS_SMOOTH_ALPHA = 0.12
 HORIZONTAL_STRETCH_DIRECTION_DEADZONE = 130.0
+HORIZONTAL_RELEASE_BOUNCE_GAIN = 0.0017
 
 # Color/sparkle accents for a lively feel without being distracting.
 SPARKLE_COUNT = 8
@@ -173,8 +174,13 @@ class Scroller(Widget):
     # Per-item physical spring state: {id(item): {"pos": float, "vel": float}}
     self._jello_item_state: dict[int, dict[str, float]] = {}
 
-    # when not pressed, snap to closest item to be center
-    self._scroll_snap_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
+    # when not pressed, snap to closest item to center
+    # horizontal gets a slightly springier settle so release feels less dead.
+    if self._horizontal:
+      self._scroll_snap_filter = BounceFilter(0.0, 0.07, 1 / gui_app.target_fps, bounce=1.42)
+    else:
+      self._scroll_snap_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
+    self._prev_scroll_panel_state = ScrollState.STEADY
 
     self.scroll_panel = GuiScrollPanel2(self._horizontal, handle_out_of_bounds=not self._snap_items)
     self._scroll_enabled: bool | Callable[[], bool] = True
@@ -244,48 +250,82 @@ class Scroller(Widget):
     scroll_enabled = self._scroll_enabled() if callable(self._scroll_enabled) else self._scroll_enabled
     self.scroll_panel.set_enabled(scroll_enabled and self.enabled)
     self.scroll_panel.update(self._rect, content_size)
+    panel_state = self.scroll_panel.state
     if not self._snap_items:
+      self._prev_scroll_panel_state = panel_state
       return round(self.scroll_panel.get_offset())
 
-    # Snap closest item to center
+    if self._horizontal and panel_state == ScrollState.AUTO_SCROLL and \
+       self._prev_scroll_panel_state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL):
+      if isinstance(self._scroll_snap_filter, BounceFilter):
+        release_v = float(np.clip(self._scroll_velocity.x, -2800.0, 2800.0))
+        self._scroll_snap_filter.velocity.x = release_v * HORIZONTAL_RELEASE_BOUNCE_GAIN
+
+    # Snap closest item to center.
     center_pos = self._rect.x + self._rect.width / 2 if self._horizontal else self._rect.y + self._rect.height / 2
+    cur_offset = self.scroll_panel.get_offset()
     closest_delta_pos = float('inf')
-    scroll_snap_idx: int | None = None
+    snap_item_center: float | None = None
+    cur_pos = 0.0
     for idx, item in enumerate(visible_items):
       if self._horizontal:
-        delta_pos = (item.rect.x + item.rect.width / 2) - center_pos
+        # Horizontal: compute centers from stable content layout model (not item.rect),
+        # since item.rect can be jello-transformed and causes snap-target jitter/fighting.
+        spacing = self._spacing if idx > 0 else self._pad_start
+        item_center = self._rect.x + cur_pos + spacing + item.rect.width / 2 + cur_offset
+        cur_pos += item.rect.width + spacing
       else:
-        delta_pos = (item.rect.y + item.rect.height / 2) - center_pos
+        # Vertical: preserve original behavior.
+        item_center = item.rect.y + item.rect.height / 2
+
+      delta_pos = item_center - center_pos
       if abs(delta_pos) < abs(closest_delta_pos):
         closest_delta_pos = delta_pos
-        scroll_snap_idx = idx
+        snap_item_center = item_center
 
-    if scroll_snap_idx is not None:
-      snap_item = visible_items[scroll_snap_idx]
+    if snap_item_center is not None:
       if self.is_pressed:
         # no snapping until released
         self._scroll_snap_filter.x = 0
       else:
         # TODO: this doesn't handle two small buttons at the edges well
         if self._horizontal:
-          # Horizontal only: avoid fighting momentum, then apply gentler final snap.
-          if self.scroll_panel.state != ScrollState.STEADY:
+          # Horizontal: keep trying to snap after release too (AUTO_SCROLL), but
+          # scale snap strength by current speed to avoid fighting momentum.
+          if panel_state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL):
             self._scroll_snap_filter.x = 0
+            self._prev_scroll_panel_state = panel_state
             return self.scroll_panel.get_offset()
 
-          snap_divisor = 16.0  # lower snap force than vertical for smoother settling
-          snap_delta_pos = (center_pos - (snap_item.rect.x + snap_item.rect.width / 2)) / snap_divisor
-          snap_delta_pos = min(snap_delta_pos, -self.scroll_panel.get_offset() / snap_divisor)
-          snap_delta_pos = max(snap_delta_pos, (self._rect.width - self.scroll_panel.get_offset() - content_size) / snap_divisor)
-          snap_delta_pos = np.clip(snap_delta_pos, -10.0, 10.0)
+          speed = abs(self._scroll_velocity.x)
+          vel = self._scroll_velocity.x
+          speed_t = min(1.0, speed / 2200.0)
+          # High speed => weaker snap; low speed => stronger snap.
+          snap_divisor = 13.0 + 14.0 * speed_t
+          snap_delta_pos = (center_pos - snap_item_center) / snap_divisor
+          snap_delta_pos = min(snap_delta_pos, -cur_offset / snap_divisor)
+          snap_delta_pos = max(snap_delta_pos, (self._rect.width - cur_offset - content_size) / snap_divisor)
+          if panel_state == ScrollState.AUTO_SCROLL:
+            # Prevent tug-of-war: while momentum is still high, only allow snap assist
+            # if it helps current travel direction. Otherwise, wait until velocity drops.
+            opposing_momentum = (snap_delta_pos * vel) < 0.0 and speed > 520.0
+            if opposing_momentum:
+              snap_delta_pos = 0.0
+              self._scroll_snap_filter.x = 0.0
+            else:
+              snap_delta_pos *= (0.14 + 0.86 * (1.0 - speed_t))
+          # Clamp per-frame snap displacement; permit larger settle steps at low speed.
+          snap_clip = 4.0 + 8.0 * (1.0 - speed_t)
+          snap_delta_pos = np.clip(snap_delta_pos, -snap_clip, snap_clip)
         else:
-          snap_delta_pos = (center_pos - (snap_item.rect.y + snap_item.rect.height / 2)) / 10
-          snap_delta_pos = min(snap_delta_pos, -self.scroll_panel.get_offset() / 10)
-          snap_delta_pos = max(snap_delta_pos, (self._rect.height - self.scroll_panel.get_offset() - content_size) / 10)
+          snap_delta_pos = (center_pos - snap_item_center) / 10
+          snap_delta_pos = min(snap_delta_pos, -cur_offset / 10)
+          snap_delta_pos = max(snap_delta_pos, (self._rect.height - cur_offset - content_size) / 10)
         self._scroll_snap_filter.update(snap_delta_pos)
 
-      self.scroll_panel.set_offset(self.scroll_panel.get_offset() + self._scroll_snap_filter.x)
+      self.scroll_panel.set_offset(cur_offset + self._scroll_snap_filter.x)
 
+    self._prev_scroll_panel_state = panel_state
     return self.scroll_panel.get_offset()
 
   def _layout(self):
@@ -369,9 +409,10 @@ class Scroller(Widget):
     # Subtle ambient backdrop inside scroller viewport.
     t = rl.get_time()
     bg_a = int(255 * SCROLLER_BG_AMBIENT_ALPHA)
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y),
-                                 int(self._rect.width), int(self._rect.height),
-                                 rl.Color(105, 165, 255, bg_a), rl.Color(16, 24, 42, 0))
+    ambient_rect = rl.Rectangle(self._rect.x + 5, self._rect.y + 4, self._rect.width - 10, self._rect.height - 8)
+    ambient_roundness = min(1.0, 22 / max(1.0, min(ambient_rect.width, ambient_rect.height) / 2))
+    rl.draw_rectangle_rounded(ambient_rect, ambient_roundness, 12, rl.Color(92, 146, 232, int(bg_a * 0.85)))
+    rl.draw_rectangle_rounded_lines_ex(ambient_rect, ambient_roundness, 12, 1, rl.Color(165, 212, 255, int(bg_a * 0.75)))
     # Soft drifting blobs for depth (kept intentionally faint).
     blob_a = int(255 * SCROLLER_BG_AMBIENT_ALPHA * 0.65)
     blob_r = max(18, int(min(self._rect.width, self._rect.height) * 0.14))

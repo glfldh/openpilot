@@ -285,7 +285,8 @@ class AlertRenderer(Widget):
       bg_height = int(self._rect.height)
 
     solid_height = round(bg_height * 0.2)
-    rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), solid_height, color)
+    top_band = rl.Rectangle(self._rect.x + 6, self._rect.y + 4, self._rect.width - 12, max(1, solid_height))
+    rl.draw_rectangle_rounded(top_band, 0.08, 10, color)
     rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y + solid_height), int(self._rect.width),
                                  int(bg_height - solid_height),
                                  color, translucent_color)

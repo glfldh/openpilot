@@ -12,6 +12,7 @@ MIN_VELOCITY = 10  # px/s, changes from auto scroll to steady state
 MIN_VELOCITY_FOR_CLICKING = 2 * 60  # px/s, accepts clicks while auto scrolling below this velocity
 MIN_DRAG_PIXELS = 12
 AUTO_SCROLL_TC_SNAP = 0.025
+AUTO_SCROLL_TC_SNAP_HORIZONTAL = 0.085
 AUTO_SCROLL_TC = 0.18
 BOUNCE_RETURN_RATE = 10.0
 REJECT_DECELERATION_FACTOR = 3
@@ -32,7 +33,12 @@ class GuiScrollPanel2:
   def __init__(self, horizontal: bool = True, handle_out_of_bounds: bool = True) -> None:
     self._horizontal = horizontal
     self._handle_out_of_bounds = handle_out_of_bounds
-    self._AUTO_SCROLL_TC = AUTO_SCROLL_TC_SNAP if not self._handle_out_of_bounds else AUTO_SCROLL_TC
+    if not self._handle_out_of_bounds:
+      # Snap-mode horizontal panels should still coast a bit before settle.
+      self._AUTO_SCROLL_TC = AUTO_SCROLL_TC_SNAP_HORIZONTAL if self._horizontal else AUTO_SCROLL_TC_SNAP
+    else:
+      self._AUTO_SCROLL_TC = AUTO_SCROLL_TC
+    self._release_low_speed_threshold = MIN_VELOCITY_FOR_CLICKING * (0.95 if self._horizontal else 1.5)
     self._state = ScrollState.STEADY
     self._offset: rl.Vector2 = rl.Vector2(0, 0)
     self._initial_click_event: MouseEvent | None = None
@@ -167,7 +173,7 @@ class GuiScrollPanel2:
             high_decel = True
 
         # If final velocity is below some threshold, switch to steady state too
-        low_speed = abs(self._velocity) <= MIN_VELOCITY_FOR_CLICKING * 1.5  # plus some margin
+        low_speed = abs(self._velocity) <= self._release_low_speed_threshold
 
         if out_of_bounds or not (high_decel or low_speed):
           self._state = ScrollState.AUTO_SCROLL

@@ -49,6 +49,8 @@ RECORD_SPEED = int(os.getenv("RECORD_SPEED", "1"))  # Speed multiplier
 OFFSCREEN = os.getenv("OFFSCREEN") == "1"  # Disable FPS limiting for fast offline rendering
 EDGE_VIGNETTE_STRENGTH = float(os.getenv("EDGE_VIGNETTE_STRENGTH", "1.0"))
 STORY_EVENTS_ENABLED = os.getenv("STORY_EVENTS_ENABLED", "1") == "1"
+TOUCH_AURA_ENABLED = os.getenv("TOUCH_AURA_ENABLED", "1") == "1"
+TOUCH_AURA_FLASH_DURATION = 0.24  # match keyboard key flash
 
 GL_VERSION = """
 #version 300 es
@@ -253,6 +255,8 @@ class GuiApplication:
     self._story_particles: list[dict[str, float]] = []
     self._story_event_origin: tuple[float, float] = (0.0, 0.0)
     self._next_story_event_t = time.monotonic() + random.uniform(2.5, 5.5)
+    self._touch_aura_slots: list[MousePos | None] = [None] * MAX_TOUCH_SLOTS
+    self._touch_aura_press_t: list[float] = [0.0] * MAX_TOUCH_SLOTS
 
   @property
   def frame(self):
@@ -521,6 +525,7 @@ class GuiApplication:
         self._mouse_events = self._mouse.get_events()
         if len(self._mouse_events) > 0:
           self._last_mouse_event = self._mouse_events[-1]
+        self._update_touch_aura_state()
 
         # Skip rendering when screen is off
         if not self._should_render:
@@ -570,6 +575,7 @@ class GuiApplication:
         if self._grid_size > 0:
           self._draw_grid()
 
+        self._draw_touch_aura()
         self._draw_story_events()
         self._draw_edge_vignette()
 
@@ -748,8 +754,41 @@ class GuiApplication:
       rl.draw_line(0, y, self._scaled_width, y, grid_color)
       y += self._grid_size
 
+  def _update_touch_aura_state(self):
+    if not TOUCH_AURA_ENABLED:
+      return
+    now = time.monotonic()
+    for ev in self._mouse_events:
+      slot = max(0, min(MAX_TOUCH_SLOTS - 1, ev.slot))
+      if ev.left_pressed:
+        self._touch_aura_press_t[slot] = now
+        self._touch_aura_slots[slot] = ev.pos
+      elif ev.left_released:
+        self._touch_aura_slots[slot] = None
+      elif ev.left_down:
+        prev = self._touch_aura_slots[slot]
+        if prev is None or math.hypot(ev.pos.x - prev.x, ev.pos.y - prev.y) > 8.0:
+          # Re-trigger while dragging so moving touch points get keyboard-like flashes.
+          self._touch_aura_press_t[slot] = now
+        self._touch_aura_slots[slot] = ev.pos
+
+  def _draw_touch_aura(self):
+    if not TOUCH_AURA_ENABLED:
+      return
+
+    t = time.monotonic()
+    for slot, slot_pos in enumerate(self._touch_aura_slots):
+      if slot_pos is None:
+        continue
+      dt = t - self._touch_aura_press_t[slot]
+      tap_t = min(1.0, max(0.0, dt / TOUCH_AURA_FLASH_DURATION))
+      flash_r = 26 + 90 * tap_t
+      flash_a = int(255 * (1.0 - tap_t) * 0.42)
+      rl.draw_circle_gradient(int(slot_pos.x), int(slot_pos.y), flash_r,
+                              rl.Color(176, 228, 255, flash_a), rl.Color(176, 228, 255, 0))
+
   def _trigger_story_event(self):
-    self._story_event_kind = random.choice(["comet", "pulse", "scan", "spark_burst"])
+    self._story_event_kind = random.choice(["comet", "pulse", "ripple", "spark_burst"])
     self._story_event_t = time.monotonic()
     ox = random.uniform(self._scaled_width * 0.18, self._scaled_width * 0.82)
     oy = random.uniform(self._scaled_height * 0.2, self._scaled_height * 0.8)
@@ -798,13 +837,16 @@ class GuiApplication:
       alpha = int(255 * (1.0 - p) ** 1.4 * 0.32)
       rl.draw_circle_lines(int(ox), int(oy), radius, rl.Color(172, 224, 255, alpha))
       rl.draw_circle_lines(int(ox), int(oy), radius * 0.78, rl.Color(198, 146, 255, int(alpha * 0.7)))
-    elif self._story_event_kind == "scan":
-      y = int((self._scaled_height + 120) * p) - 60
-      alpha = int(255 * 0.14 * (1.0 - abs(0.5 - p) * 1.3))
-      rl.draw_rectangle_gradient_v(0, y - 20, self._scaled_width, 40,
-                                   rl.Color(136, 208, 255, 0), rl.Color(136, 208, 255, alpha))
-      rl.draw_rectangle_gradient_v(0, y, self._scaled_width, 2,
-                                   rl.Color(176, 232, 255, alpha), rl.Color(176, 232, 255, 0))
+    elif self._story_event_kind == "ripple":
+      cy = self._scaled_height * (0.18 + 0.64 * p)
+      alpha = int(255 * 0.20 * (1.0 - p) ** 1.1)
+      for i in range(4):
+        wave_p = p + i * 0.08
+        if wave_p > 1.0:
+          continue
+        wave_alpha = int(alpha * (1.0 - i * 0.18))
+        wave_r = int(80 + 230 * wave_p)
+        rl.draw_circle_lines(int(self._scaled_width * 0.5), int(cy), wave_r, rl.Color(146, 214, 255, wave_alpha))
     elif self._story_event_kind == "comet":
       cx = self._scaled_width * (0.08 + 0.84 * p)
       cy = self._scaled_height * (0.25 + 0.18 * math.sin(p * 6.2))

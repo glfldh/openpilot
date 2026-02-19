@@ -99,7 +99,7 @@ class FirehoseLayoutBase(Widget):
     y += 20
 
     # Separator
-    rl.draw_rectangle(x, y, w, 2, self.GRAY)
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, 4), 1.0, 8, self.GRAY)
     y += 20
 
     # Status
@@ -115,7 +115,7 @@ class FirehoseLayoutBase(Widget):
       y += 20
 
     # Separator
-    rl.draw_rectangle(x, y, w, 2, self.GRAY)
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, 4), 1.0, 8, self.GRAY)
     y += 20
 
     # Instructions intro

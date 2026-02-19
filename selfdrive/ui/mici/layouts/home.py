@@ -1,5 +1,6 @@
 import time
 import math
+import random
 
 from cereal import log
 import pyray as rl
@@ -92,6 +93,10 @@ class MiciHomeLayout(Widget):
     self._version_text = None
     self._experimental_mode = False
     self._alive_energy_filter = FirstOrderFilter(0.12, 0.08, 1 / gui_app.target_fps)
+    self._title_motion = {"x": 0.0, "y": 0.0, "vx": 0.0, "vy": 0.0}
+    self._meta_motion = {"x": 0.0, "y": 0.0, "vx": 0.0, "vy": 0.0}
+    self._icon_motion: dict[str, dict[str, float]] = {}
+    self._sharks: list[dict[str, float]] = []
 
     self._settings_txt = gui_app.texture("icons_mici/settings.png", 48, 48)
     self._experimental_txt = gui_app.texture("icons_mici/experimental_mode.png", 48, 48)
@@ -123,6 +128,68 @@ class MiciHomeLayout(Widget):
     self._version_text = self._get_version_text()
     self._update_network_status(ui_state.sm['deviceState'])
     self._update_params()
+    self._init_sharks()
+
+  def _init_sharks(self):
+    if self._sharks:
+      return
+    lane_ys = [0.20, 0.30, 0.40, 0.56, 0.68]
+    for i in range(5):
+      size = random.uniform(0.65, 1.15)
+      self._sharks.append({
+        "lane": lane_ys[i],
+        "phase": random.uniform(0.0, 50.0),
+        "speed": random.uniform(34.0, 58.0),
+        "amp": random.uniform(5.0, 13.0),
+        "size": size,
+        "dir": -1.0 if i % 2 == 0 else 1.0,
+        "depth": random.uniform(0.35, 1.0),
+      })
+
+  def _draw_sharks(self, t: float, alive: float):
+    if not self._sharks:
+      self._init_sharks()
+    w = self._rect.width
+    h = self._rect.height
+    for shark in self._sharks:
+      run = shark["phase"] + t * shark["speed"] * (0.65 + 0.8 * shark["depth"]) * (0.9 + 0.6 * alive)
+      span = w + 220
+      x = (run % span) - 110
+      if shark["dir"] < 0:
+        x = w - x
+      y = self._rect.y + h * shark["lane"] + math.sin(t * 1.1 + shark["phase"] * 0.23) * shark["amp"] * (0.6 + 0.7 * alive)
+      if x < -120 or x > self._rect.x + w + 120:
+        continue
+
+      facing = shark["dir"]
+      s = shark["size"] * (0.85 + 0.25 * shark["depth"])
+      body_len = 20.0 * s
+      body_r = 5.0 * s
+      alpha = int(255 * (0.10 + 0.18 * shark["depth"]))
+      body_color = rl.Color(178, 212, 228, alpha)
+      fin_color = rl.Color(206, 230, 245, int(alpha * 0.9))
+
+      cx = self._rect.x + x
+      cy = y
+      # Body
+      rl.draw_circle(int(cx), int(cy), body_r, body_color)
+      rl.draw_circle(int(cx + facing * body_len * 0.35), int(cy), body_r * 0.9, body_color)
+      # Tail
+      tail_x = cx - facing * body_len * 0.7
+      rl.draw_triangle(
+        rl.Vector2(tail_x, cy),
+        rl.Vector2(tail_x - facing * body_len * 0.45, cy - body_r * 0.85),
+        rl.Vector2(tail_x - facing * body_len * 0.45, cy + body_r * 0.85),
+        fin_color,
+      )
+      # Top fin
+      fin_x = cx + facing * body_len * 0.05
+      rl.draw_triangle(
+        rl.Vector2(fin_x, cy - body_r * 0.2),
+        rl.Vector2(fin_x - facing * body_len * 0.14, cy - body_r * 1.5),
+        rl.Vector2(fin_x + facing * body_len * 0.16, cy - body_r * 0.95),
+        fin_color,
+      )
 
   def _update_params(self):
     self._experimental_mode = ui_state.params.get_bool("ExperimentalMode")
@@ -190,6 +257,32 @@ class MiciHomeLayout(Widget):
 
     return None
 
+  def _step_float_body(self, state: dict[str, float], target_x: float, target_y: float, phase: float,
+                       alive: float, strength: float) -> tuple[float, float]:
+    dt = max(rl.get_frame_time(), 1e-4)
+    wave_x = math.sin(rl.get_time() * (1.15 + 0.45 * alive) + phase) * (8.0 + 14.0 * alive) * strength
+    wave_y = (math.sin(rl.get_time() * (1.75 + 0.70 * alive) + phase * 1.4) * (10.0 + 16.0 * alive) +
+              abs(math.sin(rl.get_time() * 0.72 + phase * 0.7)) * (6.0 + 10.0 * alive)) * strength
+
+    desired_x = target_x + wave_x
+    desired_y = target_y + wave_y
+
+    ax = (desired_x - state["x"]) * (7.8 + 2.8 * alive) - state["vx"] * (4.9 - 1.1 * alive)
+    ay = (desired_y - state["y"]) * (8.6 + 3.1 * alive) - state["vy"] * (5.2 - 1.1 * alive)
+
+    state["vx"] += ax * dt
+    state["vy"] += ay * dt
+    speed = math.hypot(state["vx"], state["vy"])
+    max_speed = 170.0 + 160.0 * alive
+    if speed > max_speed:
+      scale = max_speed / speed
+      state["vx"] *= scale
+      state["vy"] *= scale
+
+    state["x"] += state["vx"] * dt
+    state["y"] += state["vy"] * dt
+    return state["x"], state["y"]
+
   def _render(self, _):
     t = rl.get_time()
     alive = self._alive_energy_filter.x
@@ -217,10 +310,13 @@ class MiciHomeLayout(Widget):
     sweep_alpha = int(255 * (0.025 + 0.045 * alive))
     rl.draw_rectangle_gradient_h(sweep_x - sweep_w, sweep_y, sweep_w * 2, sweep_h,
                                  rl.Color(160, 214, 255, 0), rl.Color(160, 214, 255, sweep_alpha))
+    self._draw_sharks(t, alive)
 
     # TODO: why is there extra space here to get it to be flush?
-    title_float = math.sin(t * (1.6 + 0.8 * alive)) * (1.8 + 1.9 * alive)
-    text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 16 + title_float)
+    title_base_x = self.rect.x - 2 + HOME_PADDING
+    title_base_y = self.rect.y - 16
+    title_x, title_y = self._step_float_body(self._title_motion, title_base_x, title_base_y, 0.15, alive, 1.0)
+    text_pos = rl.Vector2(title_x, title_y)
     # Halo behind home title.
     halo_pulse = 0.5 + 0.5 * math.sin(t * (2.6 + 2.0 * alive))
     halo_alpha = int(255 * (0.05 + 0.12 * alive) * (0.65 + 0.35 * halo_pulse))
@@ -232,8 +328,18 @@ class MiciHomeLayout(Widget):
     if self._version_text is not None:
       # release branch
       release_branch = self._version_text[1] in RELEASE_BRANCHES
-      version_float = math.sin(t * (1.2 + 0.5 * alive) + 0.9) * (1.2 + 1.6 * alive)
-      version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16 + version_float, 100, 44)
+      version_base_x = text_pos.x
+      version_base_y = text_pos.y + self._openpilot_label.font_size + 16
+      version_x, version_y = self._step_float_body(self._meta_motion, version_base_x, version_base_y, 0.9, alive, 0.85)
+      # Keep text blocks from intersecting while preserving watery movement.
+      min_gap = 86.0
+      if version_y < text_pos.y + min_gap:
+        push = (text_pos.y + min_gap) - version_y
+        version_y += push
+        self._meta_motion["y"] = version_y
+        self._meta_motion["vy"] += push * 0.55
+        self._title_motion["vy"] -= push * 0.12
+      version_pos = rl.Rectangle(version_x, version_y, 100, 44)
       self._version_label.set_text(self._version_text[0])
       self._version_label.set_position(version_pos.x, version_pos.y)
       self._version_label.render()
@@ -268,26 +374,37 @@ class MiciHomeLayout(Widget):
     t = rl.get_time()
     alive = self._alive_energy_filter.x
     def draw_alive_icon(texture: rl.Texture, x: float, phase: float, glow_rgb: tuple[int, int, int], alpha: int = 230,
-                        y_offset: float = 0.0) -> float:
-      bob = math.sin(t * (2.2 + 1.2 * alive) + phase) * (1.2 + 2.1 * alive)
+                        y_offset: float = 0.0, key: str = "") -> float:
+      icon_y_base = self._rect.y + self.rect.height - texture.height / 2 - Y_CENTER + y_offset
+      icon_x_base = x
+
+      st = self._icon_motion.get(key)
+      if st is None:
+        st = {"x": icon_x_base, "y": icon_y_base, "vx": 0.0, "vy": 0.0, "w": float(texture.width), "h": float(texture.height)}
+        self._icon_motion[key] = st
+      st["w"] = float(texture.width)
+      st["h"] = float(texture.height)
+      icon_x, icon_y = self._step_float_body(st, icon_x_base, icon_y_base, phase, alive, 1.25)
+
       pulse = 0.5 + 0.5 * math.sin(t * (3.4 + 1.6 * alive) + phase * 1.6)
-      icon_y = self._rect.y + self.rect.height - texture.height / 2 - Y_CENTER + bob + y_offset
       glow_a = int(255 * (0.05 + 0.17 * alive) * (0.55 + 0.45 * pulse))
       glow_r = 26 + 10 * pulse + 8 * alive
-      rl.draw_circle_gradient(int(x + texture.width / 2), int(icon_y + texture.height / 2), glow_r,
+      rl.draw_circle_gradient(int(icon_x + texture.width / 2), int(icon_y + texture.height / 2), glow_r,
                               rl.Color(glow_rgb[0], glow_rgb[1], glow_rgb[2], glow_a),
                               rl.Color(glow_rgb[0], glow_rgb[1], glow_rgb[2], 0))
       # Tiny top sheen for "alive" feel.
       sheen_w = int(texture.width * 0.5)
-      sheen_x = int(x + texture.width * (0.25 + 0.35 * pulse))
+      sheen_x = int(icon_x + texture.width * (0.25 + 0.35 * pulse))
       sheen_y = int(icon_y + texture.height * 0.16)
       rl.draw_rectangle_gradient_h(sheen_x - sheen_w // 2, sheen_y, sheen_w, 2,
                                    rl.Color(255, 255, 255, 0),
                                    rl.Color(255, 255, 255, int(46 + 45 * alive)))
-      rl.draw_texture(texture, int(x), int(icon_y), rl.Color(255, 255, 255, alpha))
+      rl.draw_texture(texture, int(icon_x), int(icon_y), rl.Color(255, 255, 255, alpha))
       return x + texture.width + ITEM_SPACING
 
-    last_x = draw_alive_icon(self._settings_txt, last_x, 0.2, (150, 210, 255), alpha=int(255 * 0.9))
+    draw_items: list[tuple[str, rl.Texture, float, tuple[int, int, int], int, float]] = [
+      ("settings", self._settings_txt, 0.2, (150, 210, 255), int(255 * 0.9), 0.0)
+    ]
 
     # draw network
     if self._net_type == NetworkType.wifi:
@@ -297,7 +414,7 @@ class MiciHomeLayout(Widget):
                       3: self._wifi_medium_txt,
                       4: self._wifi_full_txt,
                       5: self._wifi_full_txt}.get(self._net_strength, self._wifi_low_txt)
-      last_x = draw_alive_icon(draw_net_txt, last_x, 1.0, (134, 220, 255), alpha=int(255 * 0.9))
+      draw_items.append(("network", draw_net_txt, 1.0, (134, 220, 255), int(255 * 0.9), 0.0))
 
     elif self._net_type in (NetworkType.cell2G, NetworkType.cell3G, NetworkType.cell4G, NetworkType.cell5G):
       draw_net_txt = {0: self._cell_none_txt,
@@ -305,18 +422,62 @@ class MiciHomeLayout(Widget):
                       3: self._cell_medium_txt,
                       4: self._cell_high_txt,
                       5: self._cell_full_txt}.get(self._net_strength, self._cell_none_txt)
-      last_x = draw_alive_icon(draw_net_txt, last_x, 1.45, (166, 196, 255), alpha=int(255 * 0.9))
+      draw_items.append(("network", draw_net_txt, 1.45, (166, 196, 255), int(255 * 0.9), 0.0))
 
     else:
       # No network
       # Offset by difference in height between slashless and slash icons to make center align match
       slash_y_offset = -(self._wifi_slash_txt.height - self._wifi_none_txt.height) / 2
-      last_x = draw_alive_icon(self._wifi_slash_txt, last_x, 1.8, (194, 146, 255), alpha=int(255 * 0.9), y_offset=slash_y_offset)
+      draw_items.append(("network", self._wifi_slash_txt, 1.8, (194, 146, 255), int(255 * 0.9), slash_y_offset))
 
     # draw experimental icon
     if self._experimental_mode:
-      last_x = draw_alive_icon(self._experimental_txt, last_x, 2.3, (176, 146, 255), alpha=255)
+      draw_items.append(("experimental", self._experimental_txt, 2.3, (176, 146, 255), 255, 0.0))
 
     # draw microphone icon when recording audio is enabled
     if ui_state.recording_audio:
-      last_x = draw_alive_icon(self._mic_txt, last_x, 2.8, (142, 236, 216), alpha=255)
+      draw_items.append(("mic", self._mic_txt, 2.8, (142, 236, 216), 255, 0.0))
+
+    # Keep icon motion states bounded to active icon keys.
+    active_keys = {item[0] for item in draw_items}
+    for key in list(self._icon_motion.keys()):
+      if key not in active_keys:
+        del self._icon_motion[key]
+
+    # Icon collisions: if they overlap, push apart and transfer momentum.
+    dt = max(rl.get_frame_time(), 1e-4)
+    for _ in range(2):
+      for i in range(len(draw_items)):
+        ki = draw_items[i][0]
+        ai = self._icon_motion.get(ki)
+        if ai is None:
+          continue
+        for j in range(i + 1, len(draw_items)):
+          kj = draw_items[j][0]
+          aj = self._icon_motion.get(kj)
+          if aj is None:
+            continue
+          cix = ai["x"] + ai["w"] * 0.5
+          ciy = ai["y"] + ai["h"] * 0.5
+          cjx = aj["x"] + aj["w"] * 0.5
+          cjy = aj["y"] + aj["h"] * 0.5
+          dx = cjx - cix
+          dy = cjy - ciy
+          dist = math.hypot(dx, dy)
+          min_dist = (ai["w"] + aj["w"]) * 0.48
+          if dist < min_dist:
+            nx, ny = (1.0, 0.0) if dist < 1e-3 else (dx / dist, dy / dist)
+            overlap = min_dist - dist
+            ai["x"] -= nx * overlap * 0.56
+            ai["y"] -= ny * overlap * 0.56
+            aj["x"] += nx * overlap * 0.56
+            aj["y"] += ny * overlap * 0.56
+            impulse = overlap * (18.0 + 22.0 * alive)
+            ai["vx"] -= nx * impulse * dt
+            ai["vy"] -= ny * impulse * dt
+            aj["vx"] += nx * impulse * dt
+            aj["vy"] += ny * impulse * dt
+
+    # Draw pass
+    for key, texture, phase, glow_rgb, alpha, y_offset in draw_items:
+      last_x = draw_alive_icon(texture, last_x, phase, glow_rgb, alpha=alpha, y_offset=y_offset, key=key)

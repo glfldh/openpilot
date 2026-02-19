@@ -255,7 +255,8 @@ class AugmentedRoadView(CameraView):
 
     # Draw darkened background and text if not onroad
     if not ui_state.started:
-      rl.draw_rectangle(int(self.rect.x), int(self.rect.y), int(self.rect.width), int(self.rect.height), rl.Color(0, 0, 0, 175))
+      offroad_overlay = rl.Rectangle(self.rect.x + 6, self.rect.y + 6, self.rect.width - 12, self.rect.height - 12)
+      rl.draw_rectangle_rounded(offroad_overlay, 0.06, 12, rl.Color(0, 0, 0, 175))
       self._offroad_label.render(self._content_rect)
 
     # publish uiDebug

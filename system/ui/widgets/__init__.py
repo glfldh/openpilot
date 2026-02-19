@@ -503,7 +503,9 @@ class NavWidget(Widget, abc.ABC):
       # Draw rich backdrop above widget while dismissing.
       if self._rect.y > 0:
         top_h = int(self._rect.y)
-        rl.draw_rectangle(int(self._rect.x), 0, int(self._rect.width), top_h, rl.Color(6, 8, 14, 255))
+        if top_h > 0:
+          top_rect = rl.Rectangle(self._rect.x + 6, 4, self._rect.width - 12, max(1, top_h - 4))
+          rl.draw_rectangle_rounded(top_rect, 0.07, 12, rl.Color(6, 8, 14, 255))
         rl.draw_rectangle_gradient_v(int(self._rect.x), 0, int(self._rect.width), top_h,
                                      rl.Color(112, 186, 255, min(255, int(NAV_EPIC_AURA_MAX_ALPHA * fx_energy))),
                                      rl.Color(0, 0, 0, 0))
