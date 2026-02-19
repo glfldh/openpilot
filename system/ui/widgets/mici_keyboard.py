@@ -24,6 +24,11 @@ ALIVE_WAVE_AMPLITUDE = 4.0
 ALIVE_WAVE_HZ = 2.2
 KEY_ENERGY_SPEED = 1600.0
 TAP_FLASH_DURATION = 0.24
+SELECTED_ARC_HEIGHT = 34.0
+SELECTED_ARC_SIDE = 12.0
+SELECTED_ARC_TIME = 0.16
+NEARBY_JELLY_WOBBLE = 5.0
+KEY_RELEASE_FLYOUT_DURATION = 0.30
 
 
 def zip_repeat(a, b):
@@ -39,6 +44,10 @@ def fast_euclidean_distance(dx, dy):
   if max_d < min_d:
     max_d, min_d = min_d, max_d
   return 0.941246 * max_d + 0.41 * min_d
+
+
+def lerp(a: float, b: float, t: float) -> float:
+  return a + (b - a) * t
 
 
 class Key(Widget):
@@ -225,6 +234,9 @@ class MiciKeyboard(Widget):
     self._selection_ripple_t: float = rl.get_time()
     self._tap_flash_t: float = 0.0
     self._tap_flash_pos: tuple[float, float] | None = None
+    self._selected_origin = rl.Vector2(0, 0)
+    self._selected_target = rl.Vector2(0, 0)
+    self._pending_release_flyout: tuple[str, float, float, float] | None = None
 
   def get_candidate_character(self) -> str:
     # return str of character about to be added to text
@@ -252,6 +264,11 @@ class MiciKeyboard(Widget):
 
   def text(self) -> str:
     return self._text
+
+  def consume_release_flyout(self) -> tuple[str, float, float, float] | None:
+    flyout = self._pending_release_flyout
+    self._pending_release_flyout = None
+    return flyout
 
   def _handle_mouse_event(self, mouse_event: MouseEvent) -> None:
     keyboard_pos_y = self._rect.y + self._rect.height - self._txt_bg.height
@@ -325,7 +342,13 @@ class MiciKeyboard(Widget):
       elif self._closest_key[0] == self._super_special_key:
         self._set_keys(self._super_special_keys)
       else:
-        self._text += self._closest_key[0].char
+        typed_char = self._closest_key[0].char
+        self._text += typed_char
+        if typed_char.strip():
+          self._pending_release_flyout = (typed_char,
+                                          self._closest_key[0].original_position.x,
+                                          self._closest_key[0].original_position.y,
+                                          rl.get_time())
 
         # Reset caps state
         if self._caps_state == CapsState.UPPER:
@@ -352,6 +375,9 @@ class MiciKeyboard(Widget):
     if self._closest_key[0] is not self._last_selected_key:
       self._selection_ripple_t = rl.get_time()
       self._last_selected_key = self._closest_key[0]
+      if self._closest_key[0] is not None:
+        k = self._closest_key[0]
+        self._selected_origin = rl.Vector2(k.original_position.x, k.original_position.y)
 
     # unselect key after animation plays
     if self._unselect_key_t is not None and rl.get_time() > self._unselect_key_t:
@@ -378,9 +404,26 @@ class MiciKeyboard(Widget):
           key.set_font_size(CHAR_FONT_SIZE)
           key.set_color(rl.Color(240, 246, 255, 255))
         elif key == self._closest_key[0]:
-          # push key up with a max and inward so user can see key easier
-          key_y = max(key_y - 120, 40)
-          key_x += np.interp(key_x, [self._rect.x, self._rect.x + self._rect.width], [100, -100])
+          # Lift selected key into a top bubble via an arc (alive iOS-like pop path).
+          target_y = max(key_y - 120, 40)
+          target_x = key_x + np.interp(key_x, [self._rect.x, self._rect.x + self._rect.width], [100, -100])
+          self._selected_target = rl.Vector2(target_x, target_y)
+
+          # Arc progress starts at key origin and flies to target.
+          arc_t = min(1.0, max(0.0, (t - self._selection_ripple_t) / SELECTED_ARC_TIME))
+          arc_ease = 1.0 - (1.0 - arc_t) ** 3
+          center_x = self._rect.x + self._rect.width / 2
+          side_dir = -1.0 if self._selected_origin.x < center_x else 1.0
+          side_arc = SELECTED_ARC_SIDE * side_dir * 4.0 * arc_ease * (1.0 - arc_ease)
+          lift_arc = SELECTED_ARC_HEIGHT * 4.0 * arc_ease * (1.0 - arc_ease)
+
+          key_x = lerp(self._selected_origin.x, target_x, arc_ease) + side_arc
+          key_y = lerp(self._selected_origin.y, target_y, arc_ease) - lift_arc
+
+          # Extra jelly while selected.
+          jelly = (0.7 + 0.8 * energy) * (0.25 + 0.75 * self._selected_key_filter.x)
+          key_x += np.sin(t * 16.0 + key_x * 0.02) * 2.8 * jelly
+          key_y += np.sin(t * 13.0 + key_y * 0.015) * 2.0 * jelly
           key.set_alpha(1.0)
           key.set_font_size(SELECTED_CHAR_FONT_SIZE)
           key.set_color(rl.Color(255, 255, 255, 255))
@@ -408,10 +451,14 @@ class MiciKeyboard(Widget):
           ux = dx * inv
           uy = dy * inv
 
-          # NOTE: hardcode to 20 to get entire keyboard to move
-          push_pixels = np.interp(distance_from_selected_key, [0, 250], [20, 0])
+          # Stronger neighbor push + wobble for jellier response near selected key.
+          push_pixels = np.interp(distance_from_selected_key, [0, 250], [28 + 8 * energy, 0])
+          wobble_strength = np.interp(distance_from_selected_key, [0, 260], [NEARBY_JELLY_WOBBLE * (0.6 + energy), 0])
+          wobble = np.sin(t * (14.0 + 5.0 * energy) + distance_from_selected_key * 0.07) * wobble_strength
           key_x += ux * push_pixels
           key_y += uy * push_pixels
+          key_x += ux * wobble
+          key_y += uy * wobble
 
           # TODO: slow enough to use an approximation or nah? also caching might work
           font_size = np.interp(distance_from_selected_key, [0, 150], [CHAR_NEAR_FONT_SIZE, CHAR_FONT_SIZE])
@@ -441,7 +488,7 @@ class MiciKeyboard(Widget):
     # Liquid/glass keyboard panel pass.
     energy = min(1.0, self._pointer_speed_filter.x / KEY_ENERGY_SPEED)
     panel = rl.Rectangle(dest_rec.x + 3, dest_rec.y + 2, dest_rec.width - 6, dest_rec.height - 4)
-    roundness = min(1.0, 26 / max(1.0, min(panel.width, panel.height) / 2))
+    roundness = min(1.0, 52 / max(1.0, min(panel.width, panel.height) / 2))
     glass_alpha = 0.07 + 0.20 * energy
     rl.draw_rectangle_rounded(panel, roundness, 10, rl.Color(118, 176, 255, int(255 * glass_alpha)))
     rl.draw_rectangle_gradient_v(int(panel.x), int(panel.y), int(panel.width), int(panel.height * 0.52),
@@ -452,8 +499,9 @@ class MiciKeyboard(Widget):
     streak_h = int(panel.height - 10)
     streak_y = int(panel.y + (panel.height - streak_h) / 2)
     streak_color = rl.Color(255, 255, 255, int(255 * glass_alpha * 1.8))
-    rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
-    rl.draw_rectangle_gradient_h(sweep_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
+    # Single-direction sweep highlight (less busy than mirrored double lines).
+    rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w * 2, streak_h,
+                                 rl.Color(255, 255, 255, 0), streak_color)
     rl.draw_rectangle_rounded_lines_ex(panel, roundness, 10, 2, rl.Color(172, 218, 255, int(255 * (0.10 + 0.26 * energy))))
 
     if self._tap_flash_pos is not None:

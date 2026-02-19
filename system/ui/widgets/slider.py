@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 import pyray as rl
+import math
 
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.widgets import Widget
@@ -30,6 +31,8 @@ class SmallSlider(Widget):
     self._start_x_circle = 0.0
     self._scroll_x_circle = 0.0
     self._scroll_x_circle_filter = FirstOrderFilter(0, 0.05, 1 / gui_app.target_fps)
+    self._fx_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
+    self._handle_center = rl.Vector2(0, 0)
 
     self._is_dragging_circle = False
 
@@ -64,6 +67,13 @@ class SmallSlider(Widget):
   def slider_percentage(self):
     activated_pos = -self._bg_txt.width + self._circle_bg_txt.width
     return min(max(-self._scroll_x_circle_filter.x / abs(activated_pos), 0.0), 1.0)
+
+  @property
+  def fx_energy(self) -> float:
+    return float(self._fx_energy_filter.x)
+
+  def get_handle_center(self) -> rl.Vector2:
+    return self._handle_center
 
   def _on_confirm(self):
     if self._confirm_callback:
@@ -117,6 +127,15 @@ class SmallSlider(Widget):
       # not activated yet, keep movement 1:1
       self._scroll_x_circle_filter.x = self._scroll_x_circle
 
+    target_fx_energy = 0.0
+    if self._is_dragging_circle:
+      target_fx_energy = 0.85
+    elif self.confirmed:
+      target_fx_energy = 0.45
+    else:
+      target_fx_energy = self.slider_percentage * 0.35
+    self._fx_energy_filter.update(target_fx_energy)
+
   def _render(self, _):
     # TODO: iOS text shimmering animation
 
@@ -128,6 +147,7 @@ class SmallSlider(Widget):
 
     btn_x = bg_txt_x + self._bg_txt.width - self._circle_bg_txt.width + self._scroll_x_circle_filter.x
     btn_y = self._rect.y + (self._rect.height - self._circle_bg_txt.height) / 2
+    self._handle_center = rl.Vector2(btn_x + self._circle_bg_txt.width / 2, btn_y + self._circle_bg_txt.height / 2)
 
     if self._confirmed_time == 0.0 or self._scroll_x_circle > 0:
       self._label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.65 * (1.0 - self.slider_percentage) * self._opacity_filter.x)))
@@ -141,6 +161,13 @@ class SmallSlider(Widget):
 
     # circle and arrow
     rl.draw_texture_ex(self._circle_bg_txt, rl.Vector2(btn_x, btn_y), 0.0, 1.0, white)
+
+    # Alive slider shine around active knob.
+    if self._fx_energy_filter.x > 0.01:
+      glow_alpha = int(255 * self._opacity_filter.x * (0.08 + 0.30 * self._fx_energy_filter.x))
+      glow_r = self._circle_bg_txt.width * (0.45 + 0.18 * self._fx_energy_filter.x * (0.5 + 0.5 * math.sin(rl.get_time() * 10.0)))
+      rl.draw_circle_gradient(int(self._handle_center.x), int(self._handle_center.y), glow_r,
+                              rl.Color(154, 220, 255, glow_alpha), rl.Color(154, 220, 255, 0))
 
     arrow_x = btn_x + (self._circle_bg_txt.width - self._circle_arrow_txt.width) / 2
     arrow_y = btn_y + (self._circle_bg_txt.height - self._circle_arrow_txt.height) / 2

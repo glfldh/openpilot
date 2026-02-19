@@ -45,6 +45,7 @@ RECORD_QUALITY = int(os.getenv("RECORD_QUALITY", "23"))  # Dynamic bitrate quali
 RECORD_BITRATE = os.getenv("RECORD_BITRATE", "")  # Target bitrate e.g. "2000k" (overrides RECORD_QUALITY when set)
 RECORD_SPEED = int(os.getenv("RECORD_SPEED", "1"))  # Speed multiplier
 OFFSCREEN = os.getenv("OFFSCREEN") == "1"  # Disable FPS limiting for fast offline rendering
+EDGE_VIGNETTE_STRENGTH = float(os.getenv("EDGE_VIGNETTE_STRENGTH", "1.0"))
 
 GL_VERSION = """
 #version 300 es
@@ -561,6 +562,8 @@ class GuiApplication:
         if self._grid_size > 0:
           self._draw_grid()
 
+        self._draw_edge_vignette()
+
         rl.end_drawing()
 
         if RECORD:
@@ -735,6 +738,32 @@ class GuiApplication:
     while y <= self._scaled_height:
       rl.draw_line(0, y, self._scaled_width, y, grid_color)
       y += self._grid_size
+
+  def _draw_edge_vignette(self):
+    if EDGE_VIGNETTE_STRENGTH <= 0.0:
+      return
+
+    # Subtle 4-side falloff to hide hard panel/screen edges.
+    top_h = int(self._scaled_height * 0.08)
+    bottom_h = int(self._scaled_height * 0.12)
+    side_w = int(self._scaled_width * 0.07)
+
+    top_alpha = min(255, int(115 * EDGE_VIGNETTE_STRENGTH))
+    side_alpha = min(255, int(92 * EDGE_VIGNETTE_STRENGTH))
+    bottom_alpha = min(255, int(138 * EDGE_VIGNETTE_STRENGTH))
+
+    # Top: dark -> transparent
+    rl.draw_rectangle_gradient_v(0, 0, self._scaled_width, top_h,
+                                 rl.Color(0, 0, 0, top_alpha), rl.Color(0, 0, 0, 0))
+    # Bottom: transparent -> dark
+    rl.draw_rectangle_gradient_v(0, self._scaled_height - bottom_h, self._scaled_width, bottom_h,
+                                 rl.Color(0, 0, 0, 0), rl.Color(0, 0, 0, bottom_alpha))
+    # Left: dark -> transparent
+    rl.draw_rectangle_gradient_h(0, 0, side_w, self._scaled_height,
+                                 rl.Color(0, 0, 0, side_alpha), rl.Color(0, 0, 0, 0))
+    # Right: transparent -> dark
+    rl.draw_rectangle_gradient_h(self._scaled_width - side_w, 0, side_w, self._scaled_height,
+                                 rl.Color(0, 0, 0, 0), rl.Color(0, 0, 0, side_alpha))
 
   def _output_render_profile(self):
     import io

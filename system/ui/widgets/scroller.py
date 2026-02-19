@@ -31,13 +31,22 @@ JELLO_DAMPING = 24.0
 JELLO_MAX_OFFSET = 34.0
 JELLO_STRETCH_MAX = 0.14
 JELLO_VEL_TO_STRETCH = 1800.0
+STRETCH_SMOOTH_ALPHA = 0.26
+STRETCH_AXIS_SMOOTH_ALPHA = 0.18
+STRETCH_DIRECTION_DEADZONE = 90.0  # px/s
+
+# Horizontal-only stretch tuning (vertical behavior remains unchanged).
+HORIZONTAL_STRETCH_MAX = 0.10
+HORIZONTAL_STRETCH_SMOOTH_ALPHA = 0.18
+HORIZONTAL_STRETCH_AXIS_SMOOTH_ALPHA = 0.12
+HORIZONTAL_STRETCH_DIRECTION_DEADZONE = 130.0
 
 # Color/sparkle accents for a lively feel without being distracting.
 SPARKLE_COUNT = 8
 SPARKLE_BASE_ALPHA = 0.06
-SPARKLE_ENERGY_ALPHA = 0.24
+SPARKLE_ENERGY_ALPHA = 0.13
 LIQUID_GLASS_BASE_ALPHA = 0.12
-LIQUID_GLASS_ENERGY_ALPHA = 0.34
+LIQUID_GLASS_ENERGY_ALPHA = 0.20
 LIQUID_GLASS_SWEEP_HZ = 4.1
 
 
@@ -66,6 +75,9 @@ class ScrollIndicator(Widget):
     self._content_size: float = 0.0
     self._viewport: rl.Rectangle = rl.Rectangle(0, 0, 0, 0)
     self._is_active: bool = False
+    self._x_filter = FirstOrderFilter(0.0, 0.09, 1 / gui_app.target_fps)
+    self._w_filter = FirstOrderFilter(self._txt_scroll_indicator.width, 0.11, 1 / gui_app.target_fps)
+    self._initialized = False
 
   def update(self, scroll_offset: float, content_size: float, viewport: rl.Rectangle,
              is_active: bool = False) -> None:
@@ -86,23 +98,41 @@ class ScrollIndicator(Widget):
     # don't bounce up when NavWidget shows
     y = max(self._viewport.y, 0) + self._viewport.height - self._txt_scroll_indicator.height / 2
 
-    # squeeze when overscrolling past edges
-    dest_left = max(x, self._viewport.x)
-    dest_right = min(x + indicator_w, self._viewport.x + self._viewport.width)
-    dest_w = max(indicator_w / 2, dest_right - dest_left)
+    # Smoothly squeeze when overscrolling past edges.
+    viewport_left = self._viewport.x
+    viewport_right = self._viewport.x + self._viewport.width
+    overscroll_left = max(viewport_left - x, 0.0)
+    overscroll_right = max((x + indicator_w) - viewport_right, 0.0)
+    overscroll = overscroll_left + overscroll_right
+    squish = min(0.5, overscroll / max(indicator_w, 1.0))
 
-    # keep within viewport after applying minimum width
-    dest_left = min(dest_left, self._viewport.x + self._viewport.width - dest_w)
-    dest_left = max(dest_left, self._viewport.x)
+    # Keep a minimum width while still feeling elastic.
+    target_w = max(indicator_w * 0.52, indicator_w * (1.0 - squish))
+    target_center = x + indicator_w / 2
 
-    # pulse alpha/width when actively scrolling - feels alive and responsive
+    if self._is_active:
+      # Add wobble, but suppress it when heavily squished near edges to prevent jerk.
+      wobble_mix = 1.0 - min(1.0, squish * 1.8)
+      wobble = 1.0 + 0.08 * wobble_mix * np.sin(rl.get_time() * 13.0)
+      target_w *= wobble
+
+    # Low-pass x/width to avoid edge jitter during rapid gesture changes.
+    if not self._initialized:
+      self._x_filter.x = target_center
+      self._w_filter.x = target_w
+      self._initialized = True
+    else:
+      self._x_filter.update(target_center)
+      self._w_filter.update(target_w)
+
+    dest_w = self._w_filter.x
+    dest_left = self._x_filter.x - dest_w / 2
+    dest_left = min(dest_left, viewport_right - dest_w)
+    dest_left = max(dest_left, viewport_left)
+
+    # pulse alpha when actively scrolling - feels alive and responsive
     base_alpha = 0.45
     alpha = 0.7 if self._is_active else base_alpha
-    if self._is_active:
-      wobble = 1.0 + 0.08 * np.sin(rl.get_time() * 13.0)
-      dest_w *= wobble
-      dest_left = min(dest_left, self._viewport.x + self._viewport.width - dest_w)
-      dest_left = max(dest_left, self._viewport.x)
 
     src_rec = rl.Rectangle(0, 0, self._txt_scroll_indicator.width, self._txt_scroll_indicator.height)
     dest_rec = rl.Rectangle(dest_left, y, dest_w, self._txt_scroll_indicator.height)
@@ -348,9 +378,9 @@ class Scroller(Widget):
       speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
       interaction_boost = 0.0
       if self.scroll_panel.state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL, ScrollState.AUTO_SCROLL):
-        interaction_boost += 0.32
+        interaction_boost += 0.16
       if self.is_pressed:
-        interaction_boost += 0.18
+        interaction_boost += 0.08
       glow_energy = min(1.0, speed_energy + interaction_boost)
       # Keep a very light idle pulse, stronger only while moving.
       pulse_strength = CENTER_PULSE_AMPLITUDE * (0.18 + 0.82 * glow_energy)
@@ -365,17 +395,40 @@ class Scroller(Widget):
       if DO_JELLO:
         spring = self._jello_item_state.get(id(item))
         if spring is not None:
-          stretch = min(JELLO_STRETCH_MAX, abs(spring["vel"]) / JELLO_VEL_TO_STRETCH)
           if self._horizontal:
-            # Direction-aware deformation:
-            # moving left  -> x-axis stretch
-            # moving right -> y-axis stretch
-            if self._scroll_velocity.x < -15:
-              scale_x *= (1.0 + stretch)
-              scale_y *= (1.0 - stretch * 0.72)
-            elif self._scroll_velocity.x > 15:
-              scale_x *= (1.0 - stretch * 0.72)
-              scale_y *= (1.0 + stretch)
+            stretch_limit = HORIZONTAL_STRETCH_MAX
+            stretch_alpha = HORIZONTAL_STRETCH_SMOOTH_ALPHA
+            axis_alpha = HORIZONTAL_STRETCH_AXIS_SMOOTH_ALPHA
+            axis_deadzone = HORIZONTAL_STRETCH_DIRECTION_DEADZONE
+          else:
+            stretch_limit = JELLO_STRETCH_MAX
+            stretch_alpha = STRETCH_SMOOTH_ALPHA
+            axis_alpha = STRETCH_AXIS_SMOOTH_ALPHA
+            axis_deadzone = STRETCH_DIRECTION_DEADZONE
+
+          target_stretch = min(stretch_limit, abs(spring["vel"]) / JELLO_VEL_TO_STRETCH)
+          stretch = spring.get("stretch", target_stretch)
+          stretch += (target_stretch - stretch) * stretch_alpha
+          spring["stretch"] = stretch
+
+          # Smooth directional mapping so axis transitions don't flip abruptly.
+          vel = self._scroll_velocity.x
+          if abs(vel) < axis_deadzone:
+            target_axis = 0.0
+          else:
+            target_axis = float(np.clip(vel / 900.0, -1.0, 1.0))
+          axis = spring.get("stretch_axis", target_axis)
+          axis += (target_axis - axis) * axis_alpha
+          spring["stretch_axis"] = axis
+
+          if self._horizontal:
+            # Direction-aware deformation with smooth blend:
+            # moving left -> x stretch, moving right -> y stretch.
+            anis = abs(axis)
+            x_stretch = stretch * ((1.0 - axis) * 0.5) * anis
+            y_stretch = stretch * ((1.0 + axis) * 0.5) * anis
+            scale_x *= (1.0 + x_stretch) * (1.0 - y_stretch * 0.72)
+            scale_y *= (1.0 + y_stretch) * (1.0 - x_stretch * 0.72)
           else:
             scale_x *= (1.0 - stretch * 0.72)
             scale_y *= (1.0 + stretch)
@@ -398,7 +451,7 @@ class Scroller(Widget):
         glass_rect = rl.Rectangle(item.rect.x + inset, item.rect.y + inset,
                                   max(1, item.rect.width - 2 * inset), max(1, item.rect.height - 2 * inset))
         min_dim = max(1.0, min(glass_rect.width, glass_rect.height))
-        corner_px = max(8.0, min(30.0, min_dim * 0.42))
+        corner_px = max(16.0, min(56.0, min_dim * 0.58))
         roundness = min(1.0, corner_px / (min_dim / 2.0))
 
         # Base frosted tint
@@ -414,7 +467,7 @@ class Scroller(Widget):
         rl.draw_rectangle_rounded(inner_rect, roundness, 10, inner_tint)
 
         gloss_h = max(4, int(glass_rect.height * 0.44))
-        gloss_alpha = min(255, int(255 * glass_alpha * 2.2))
+        gloss_alpha = min(255, int(255 * glass_alpha * 1.45))
         rl.draw_rectangle_gradient_v(int(glass_rect.x), int(glass_rect.y),
                                      int(glass_rect.width), gloss_h,
                                      rl.Color(255, 255, 255, gloss_alpha), rl.Color(255, 255, 255, 0))
@@ -431,7 +484,7 @@ class Scroller(Widget):
         streak_w = max(8, int(14 + 18 * glow_energy))
         streak_h = max(6, int(glass_rect.height - 6))
         streak_y = int(glass_rect.y + (glass_rect.height - streak_h) / 2)
-        streak_color = rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 2.0)))
+        streak_color = rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 1.35)))
         rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w, streak_h,
                                      rl.Color(255, 255, 255, 0), streak_color)
         rl.draw_rectangle_gradient_h(sweep_x, streak_y, streak_w, streak_h,
@@ -451,7 +504,7 @@ class Scroller(Widget):
         caustic_r = max(2, int(2 + 3 * glow_energy))
         caustic_y = int(glass_rect.y + glass_rect.height * (0.32 + 0.25 * np.sin(sweep_phase * 1.37)))
         rl.draw_circle(sweep_x, caustic_y, float(caustic_r),
-                       rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 1.5))))
+                       rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 1.0))))
 
       if needs_transform:
         rl.rl_pop_matrix()
@@ -459,7 +512,7 @@ class Scroller(Widget):
     # Subtle color sparkles: energy-reactive and bounded to scroller viewport.
     speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
     if self.scroll_panel.state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL, ScrollState.AUTO_SCROLL):
-      speed_energy = min(1.0, speed_energy + 0.35)
+      speed_energy = min(1.0, speed_energy + 0.16)
     if self._horizontal and len(self._visible_items) > 0:
       t = rl.get_time()
       for i in range(SPARKLE_COUNT):

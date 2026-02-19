@@ -1,4 +1,5 @@
 import pyray as rl
+import math
 from typing import Union
 from enum import Enum
 from collections.abc import Callable
@@ -20,6 +21,7 @@ LABEL_HORIZONTAL_PADDING = 40
 LABEL_VERTICAL_PADDING = 23  # visually matches 30 in figma
 COMPLICATION_GREY    = rl.Color(0xAA, 0xAA, 0xAA, 255)
 PRESSED_SCALE = 1.15 if DO_ZOOM else 1.07
+TOGGLE_FX_DURATION = 0.52
 
 
 class ScrollState(Enum):
@@ -85,8 +87,11 @@ class BigCircleToggle(BigCircleButton):
     # Icons
     self._txt_toggle_enabled = gui_app.texture("icons_mici/buttons/toggle_dot_enabled.png", 66, 66)
     self._txt_toggle_disabled = gui_app.texture("icons_mici/buttons/toggle_dot_disabled.png", 66, 66)
+    self._toggle_fx_t: float | None = None
 
   def set_checked(self, checked: bool):
+    if checked != self._checked:
+      self._toggle_fx_t = rl.get_time()
     self._checked = checked
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
@@ -100,9 +105,31 @@ class BigCircleToggle(BigCircleButton):
     super()._draw_content(btn_y)
 
     # draw status icon
-    rl.draw_texture_ex(self._txt_toggle_enabled if self._checked else self._txt_toggle_disabled,
-                       (self._rect.x + (self._rect.width - self._txt_toggle_enabled.width) / 2, btn_y + 5),
-                       0, 1.0, rl.WHITE)
+    x = self._rect.x + (self._rect.width - self._txt_toggle_enabled.width) / 2
+    y = btn_y + 5
+    cx = x + self._txt_toggle_enabled.width / 2
+    cy = y + self._txt_toggle_enabled.height / 2
+    t = rl.get_time()
+    if self._checked:
+      breathe = 1.0 + 0.04 * math.sin(t * 7.5)
+      source_rec = rl.Rectangle(0, 0, self._txt_toggle_enabled.width, self._txt_toggle_enabled.height)
+      dest_rec = rl.Rectangle(cx, cy, self._txt_toggle_enabled.width * breathe, self._txt_toggle_enabled.height * breathe)
+      rl.draw_texture_pro(self._txt_toggle_enabled, source_rec, dest_rec,
+                          rl.Vector2(self._txt_toggle_enabled.width * breathe / 2, self._txt_toggle_enabled.height * breathe / 2), 0, rl.WHITE)
+    else:
+      rl.draw_texture_ex(self._txt_toggle_disabled, (x, y), 0, 1.0, rl.WHITE)
+
+    if self._toggle_fx_t is not None:
+      dt = t - self._toggle_fx_t
+      if dt < TOGGLE_FX_DURATION:
+        p = dt / TOGGLE_FX_DURATION
+        alpha = int(255 * (1 - p) ** 1.6)
+        ring_r = 10 + 34 * p
+        glow = rl.Color(150, 225, 255, min(255, int(alpha * 0.7)))
+        rl.draw_circle_gradient(int(cx), int(cy), ring_r, glow, rl.Color(glow.r, glow.g, glow.b, 0))
+        rl.draw_circle_lines(int(cx), int(cy), ring_r, rl.Color(220, 240, 255, min(255, int(alpha * 0.9))))
+      else:
+        self._toggle_fx_t = None
 
 
 class BigButton(Widget):
@@ -233,6 +260,7 @@ class BigToggle(BigButton):
     super().__init__(text, value, "")
     self._checked = initial_state
     self._toggle_callback = toggle_callback
+    self._toggle_fx_t: float | None = None
 
   def _load_images(self):
     super()._load_images()
@@ -240,6 +268,8 @@ class BigToggle(BigButton):
     self._txt_disabled_toggle = gui_app.texture("icons_mici/buttons/toggle_pill_disabled.png", 84, 66)
 
   def set_checked(self, checked: bool):
+    if checked != self._checked:
+      self._toggle_fx_t = rl.get_time()
     self._checked = checked
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
@@ -251,7 +281,13 @@ class BigToggle(BigButton):
   def _draw_pill(self, x: float, y: float, checked: bool):
     # draw toggle icon top right
     if checked:
-      rl.draw_texture_ex(self._txt_enabled_toggle, (x, y), 0, 1.0, rl.WHITE)
+      breathe = 1.0 + 0.03 * math.sin(rl.get_time() * 7.8)
+      source_rec = rl.Rectangle(0, 0, self._txt_enabled_toggle.width, self._txt_enabled_toggle.height)
+      dest_rec = rl.Rectangle(x + self._txt_enabled_toggle.width / 2, y + self._txt_enabled_toggle.height / 2,
+                              self._txt_enabled_toggle.width * breathe, self._txt_enabled_toggle.height * breathe)
+      rl.draw_texture_pro(self._txt_enabled_toggle, source_rec, dest_rec,
+                          rl.Vector2(self._txt_enabled_toggle.width * breathe / 2, self._txt_enabled_toggle.height * breathe / 2),
+                          0, rl.WHITE)
     else:
       rl.draw_texture_ex(self._txt_disabled_toggle, (x, y), 0, 1.0, rl.WHITE)
 
@@ -261,6 +297,26 @@ class BigToggle(BigButton):
     x = self._rect.x + self._rect.width - self._txt_enabled_toggle.width
     y = btn_y
     self._draw_pill(x, y, self._checked)
+
+    if self._toggle_fx_t is not None:
+      dt = rl.get_time() - self._toggle_fx_t
+      if dt < TOGGLE_FX_DURATION:
+        p = dt / TOGGLE_FX_DURATION
+        cx = x + self._txt_enabled_toggle.width / 2
+        cy = y + self._txt_enabled_toggle.height / 2
+        alpha = int(255 * (1 - p) ** 1.65)
+        ring_r = 14 + 46 * p
+        glow = rl.Color(140, 220, 255, min(255, int(alpha * 0.55)))
+        rl.draw_circle_gradient(int(cx), int(cy), ring_r, glow, rl.Color(glow.r, glow.g, glow.b, 0))
+        rl.draw_circle_lines(int(cx), int(cy), ring_r, rl.Color(214, 236, 255, min(255, int(alpha * 0.9))))
+        for i in range(14):
+          angle = (i / 14) * (2 * math.pi) + i * 0.21
+          px = cx + math.cos(angle) * (ring_r * 0.75)
+          py = cy + math.sin(angle) * (ring_r * 0.75)
+          dot_a = min(255, int(alpha * 0.8))
+          rl.draw_circle(int(px), int(py), 1 + int(2 * (1 - p)), rl.Color(184, 228, 255, dot_a))
+      else:
+        self._toggle_fx_t = None
 
 
 class BigMultiToggle(BigToggle):

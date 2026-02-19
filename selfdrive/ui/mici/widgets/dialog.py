@@ -12,7 +12,7 @@ from openpilot.system.ui.lib.wrap_text import wrap_text
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos, MouseEvent
 from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.widgets.slider import RedBigSlider, BigSlider
-from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.filter_simple import FirstOrderFilter, BounceFilter
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 
 DEBUG = False
@@ -80,6 +80,9 @@ class BigDialog(BigDialogBase):
 
 
 class BigConfirmationDialogV2(BigDialogBase):
+  INTRO_DURATION = 0.34
+  OUTRO_DURATION = 0.30
+
   def __init__(self, title: str, icon: str, red: bool = False,
                exit_on_confirm: bool = True,
                confirm_callback: Callable | None = None):
@@ -94,20 +97,61 @@ class BigConfirmationDialogV2(BigDialogBase):
     else:
       self._slider = BigSlider(title, icon_txt, confirm_callback=self._on_confirm)
     self._slider.set_enabled(lambda: not self._swiping_away)
+    self._intro_t = rl.get_time()
+    self._outro_t: float | None = None
+    self._confirm_handled = False
 
   def _on_confirm(self):
-    if self._confirm_callback:
+    if not self._confirm_handled and self._confirm_callback:
       self._confirm_callback()
-    if self._exit_on_confirm:
-      self._ret = DialogResult.CONFIRM
+    self._confirm_handled = True
+    if self._exit_on_confirm and self._outro_t is None:
+      self._outro_t = rl.get_time()
 
   def _update_state(self):
     super()._update_state()
     if self._swiping_away and not self._slider.confirmed:
       self._slider.reset()
+    if self._outro_t is not None and rl.get_time() - self._outro_t >= self.OUTRO_DURATION:
+      self._ret = DialogResult.CONFIRM
 
   def _render(self, _) -> DialogResult:
-    self._slider.render(self._rect)
+    t = rl.get_time()
+    intro_p = min(1.0, max(0.0, (t - self._intro_t) / self.INTRO_DURATION))
+    intro_ease = 1.0 - (1.0 - intro_p) ** 3
+    outro_p = 0.0 if self._outro_t is None else min(1.0, max(0.0, (t - self._outro_t) / self.OUTRO_DURATION))
+    outro_ease = 1.0 - (1.0 - outro_p) ** 3
+
+    # Cinematic alive background for full-screen slide dialogs.
+    live_energy = max(self._slider.fx_energy, self._slider.slider_percentage)
+    rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
+                      rl.Color(6, 10, 20, int(170 + 40 * intro_ease)))
+    top_alpha = int(255 * (0.06 + 0.16 * live_energy) * (1.0 - 0.35 * outro_ease))
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
+                                 rl.Color(114, 192, 255, top_alpha), rl.Color(0, 0, 0, 0))
+
+    # Dialog animate in/out transform.
+    scale = (0.92 + 0.08 * intro_ease) * (1.0 - 0.06 * outro_ease)
+    y_offset = (1.0 - intro_ease) * 95 + outro_ease * 105
+    render_rect = rl.Rectangle(
+      self._rect.x + (self._rect.width * (1 - scale)) / 2,
+      self._rect.y + y_offset,
+      self._rect.width * scale,
+      self._rect.height * scale,
+    )
+    self._slider.set_opacity((1.0 - 0.25 * outro_ease) * intro_ease, smooth=False)
+    self._slider.render(render_rect)
+
+    # Spark particles around the slider handle while dragging/confirming.
+    handle = self._slider.get_handle_center()
+    if live_energy > 0.05:
+      for i in range(12):
+        phase = t * (3.5 + 5.0 * live_energy) + i * 1.2
+        px = handle.x + math.cos(phase) * (20 + 32 * live_energy)
+        py = handle.y + math.sin(phase * 1.2) * (10 + 18 * live_energy)
+        alpha = int(255 * (0.08 + 0.22 * live_energy) * (0.5 + 0.5 * math.sin(phase * 1.7)))
+        rl.draw_circle(int(px), int(py), 1 + int(2 * live_energy), rl.Color(170, 230, 255, min(255, alpha)))
+
     return self._ret
 
 
@@ -115,6 +159,9 @@ class BigInputDialog(BigDialogBase):
   BACK_TOUCH_AREA_PERCENTAGE = 0.2
   BACKSPACE_RATE = 25  # hz
   TEXT_INPUT_SIZE = 35
+  KEY_FLYOUT_DURATION = 0.30
+  KEY_FLYOUT_ARC_HEIGHT = 120.0
+  ERROR_ANIM_DURATION = 1.15
 
   def __init__(self,
                hint: str,
@@ -139,6 +186,10 @@ class BigInputDialog(BigDialogBase):
     self._alive_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._last_drag_pos: MousePos | None = None
     self._tap_flash_t: float = 0.0
+    self._char_flyouts: list[dict[str, float | str]] = []
+    self._error_mode = "wrong password" in hint.lower()
+    self._error_t = rl.get_time() if self._error_mode else None
+    self._error_shake = BounceFilter(0.0, 0.06, 1 / gui_app.target_fps)
 
     # rects for top buttons
     self._top_left_button_rect = rl.Rectangle(0, 0, 0, 0)
@@ -187,8 +238,21 @@ class BigInputDialog(BigDialogBase):
   def _render(self, _):
     energy = self._alive_energy_filter.x
     t = rl.get_time()
-    panel_rect = rl.Rectangle(self._rect.x + 6, self._rect.y + 6, self._rect.width - 12, self._rect.height - 12)
-    roundness = 0.028
+    error_progress = 0.0
+    shake_x = 0.0
+    shake_y = 0.0
+    if self._error_t is not None:
+      dt_err = t - self._error_t
+      if dt_err < self.ERROR_ANIM_DURATION:
+        error_progress = 1.0 - (dt_err / self.ERROR_ANIM_DURATION)
+        target_shake = math.sin(t * 62.0) * 24.0 * (error_progress ** 1.4)
+        shake_x = self._error_shake.update(target_shake)
+        shake_y = math.sin(t * 35.0) * 3.5 * (error_progress ** 1.3)
+      else:
+        self._error_t = None
+
+    panel_rect = rl.Rectangle(self._rect.x + 6 + shake_x, self._rect.y + 6 + shake_y, self._rect.width - 12, self._rect.height - 12)
+    roundness = 0.24
 
     # Full dialog ambiance and liquid-glass panel.
     rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
@@ -205,14 +269,33 @@ class BigInputDialog(BigDialogBase):
     streak_y = int(panel_rect.y + (panel_rect.height - streak_h) / 2)
     streak_alpha = min(255, int(42 + 110 * energy))
     streak_color = rl.Color(255, 255, 255, streak_alpha)
-    rl.draw_rectangle_gradient_h(streak_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
-    rl.draw_rectangle_gradient_h(streak_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
+    # Single-direction sweep highlight to reduce visual clutter.
+    rl.draw_rectangle_gradient_h(streak_x - streak_w, streak_y, streak_w * 2, streak_h,
+                                 rl.Color(255, 255, 255, 0), streak_color)
 
     edge_alpha = min(255, int(30 + 90 * energy))
     rl.draw_rectangle_rounded_lines_ex(panel_rect, roundness, 16, 2, rl.Color(168, 220, 255, edge_alpha))
 
+    if error_progress > 0.0:
+      # Mean red danger flash + scanlines while wrong-password dialog appears.
+      danger_a = int(255 * 0.24 * error_progress)
+      rl.draw_rectangle(int(panel_rect.x), int(panel_rect.y), int(panel_rect.width), int(panel_rect.height),
+                        rl.Color(255, 44, 44, danger_a))
+      for i in range(6):
+        y = int(panel_rect.y + 14 + i * 22 + math.sin(t * 18 + i) * 4)
+        w = int(panel_rect.width * (0.55 + 0.35 * math.sin(t * 7 + i * 0.9)))
+        x = int(panel_rect.x + 12)
+        rl.draw_rectangle_gradient_h(x, y, w, 2,
+                                     rl.Color(255, 120, 120, int(125 * error_progress)),
+                                     rl.Color(255, 120, 120, 0))
+
     # draw current text so far below everything. text floats left but always stays in view
     text = self._keyboard.text()
+    flyout_event = self._keyboard.consume_release_flyout()
+    if flyout_event is not None:
+      c, sx, sy, start_t = flyout_event
+      self._char_flyouts.append({"c": c, "sx": sx, "sy": sy, "t0": start_t})
+
     candidate_char = self._keyboard.get_candidate_character()
     text_size = measure_text_cached(gui_app.font(FontWeight.ROMAN), text + candidate_char or self._hint_label.text, self.TEXT_INPUT_SIZE)
 
@@ -224,7 +307,10 @@ class BigInputDialog(BigDialogBase):
 
     # Make text area itself feel reactive.
     text_bg = rl.Rectangle(text_field_rect.x - 12, text_field_rect.y - 7, text_field_rect.width + 24, text_field_rect.height + 14)
-    rl.draw_rectangle_rounded(text_bg, 0.2, 10, rl.Color(45, 58, 88, int(95 + 85 * energy)))
+    base_bg = rl.Color(45, 58, 88, int(95 + 85 * energy))
+    if error_progress > 0.0:
+      base_bg = rl.Color(96, 32, 42, int(base_bg.a + 75 * error_progress))
+    rl.draw_rectangle_rounded(text_bg, 0.42, 10, base_bg)
     rl.draw_rectangle_gradient_v(int(text_bg.x), int(text_bg.y), int(text_bg.width), int(text_bg.height * 0.65),
                                  rl.Color(220, 236, 255, int(22 + 34 * energy)),
                                  rl.Color(220, 236, 255, 0))
@@ -257,8 +343,11 @@ class BigInputDialog(BigDialogBase):
       cursor_x = min(text_x + text_size.x + 3, text_field_rect.x + text_field_rect.width)
     else:
       cursor_x = text_field_rect.x - 6
+    cursor_color = rl.Color(255, 255, 255, int(255 * blink_alpha))
+    if error_progress > 0.0:
+      cursor_color = rl.Color(255, 120, 120, int(255 * (0.4 + 0.6 * blink_alpha)))
     rl.draw_rectangle_rounded(rl.Rectangle(int(cursor_x), int(text_field_rect.y), 4, int(text_size.y)),
-                              1, 4, rl.Color(255, 255, 255, int(255 * blink_alpha)))
+                              1, 4, cursor_color)
 
     # draw backspace icon with nice fade
     self._backspace_img_alpha.update(255 * bool(text))
@@ -271,6 +360,12 @@ class BigInputDialog(BigDialogBase):
       hint_rect = rl.Rectangle(text_field_rect.x, text_field_rect.y,
                                self._rect.width - text_field_rect.x - PADDING,
                                text_field_rect.height)
+      if error_progress > 0.0:
+        jitter_x = math.sin(t * 43.0) * 2.5 * error_progress
+        self._hint_label.set_color(rl.Color(255, 122, 122, int(255 * (0.5 + 0.45 * error_progress))))
+        hint_rect.x += jitter_x
+      else:
+        self._hint_label.set_color(rl.Color(255, 255, 255, int(255 * 0.35)))
       self._hint_label.render(hint_rect)
 
     # TODO: move to update state
@@ -288,6 +383,34 @@ class BigInputDialog(BigDialogBase):
 
     # keyboard goes over everything
     self._keyboard.render(self._rect)
+
+    # Character flyout from released key to text cursor.
+    flyout_target_x = cursor_x
+    flyout_target_y = text_field_rect.y + text_size.y / 2
+    if len(self._char_flyouts) > 0:
+      alive_flyouts: list[dict[str, float | str]] = []
+      font = gui_app.font(FontWeight.ROMAN)
+      for i, flyout in enumerate(self._char_flyouts):
+        dt = t - float(flyout["t0"])
+        if dt > self.KEY_FLYOUT_DURATION:
+          continue
+        p = min(1.0, max(0.0, dt / self.KEY_FLYOUT_DURATION))
+        ease = 1.0 - (1.0 - p) ** 3
+        sx = float(flyout["sx"])
+        sy = float(flyout["sy"])
+        tx = flyout_target_x - i * 7
+        ty = flyout_target_y
+        x = sx + (tx - sx) * ease
+        y = sy + (ty - sy) * ease - self.KEY_FLYOUT_ARC_HEIGHT * 4.0 * ease * (1.0 - ease)
+        alpha = int(255 * (1.0 - p) ** 1.35)
+        size = int(self.TEXT_INPUT_SIZE * (1.15 - 0.15 * p))
+        ch = str(flyout["c"])
+        ch_size = measure_text_cached(font, ch, size)
+        rl.draw_text_ex(font, ch, rl.Vector2(x - ch_size.x / 2, y - ch_size.y / 2), size, 0,
+                        rl.Color(224, 244, 255, alpha))
+        alive_flyouts.append(flyout)
+
+      self._char_flyouts = alive_flyouts
 
     # draw debugging rect bounds
     if DEBUG:
