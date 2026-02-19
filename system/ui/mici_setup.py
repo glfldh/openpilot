@@ -19,13 +19,14 @@ from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.wifi_manager import WifiManager
 from openpilot.system.ui.lib.scroll_panel2 import GuiScrollPanel2
-from openpilot.system.ui.widgets import Widget, DialogResult
+from openpilot.system.ui.widgets import Widget, NavWidget, DialogResult
 from openpilot.system.ui.widgets.button import (IconButton, SmallButton, WideRoundedButton, SmallerRoundedButton,
                                                 SmallCircleIconButton, WidishRoundedButton, SmallRedPillButton,
                                                 FullRoundedButton)
 from openpilot.system.ui.widgets.label import UnifiedLabel
+from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.widgets.slider import LargerSlider, SmallSlider
-from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiUIMici
+from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiButton, WifiUIMici
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog
 
 NetworkType = log.DeviceState.NetworkType
@@ -432,10 +433,18 @@ class NetworkSetupState(IntEnum):
   WIFI_PANEL = 1
 
 
-class NetworkSetupPage(Widget):
+class NetworkSetupPage(NavWidget):
   def __init__(self, wifi_manager, continue_callback: Callable, back_callback: Callable):
     super().__init__()
     self._wifi_ui = WifiUIMici(wifi_manager, back_callback=lambda: self.set_state(NetworkSetupState.MAIN))
+
+    self._wifi_button = WifiButton(wifi_manager)
+    # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
+
+    self._scroller = Scroller([
+      self._wifi_button,
+      self._wifi_ui,
+    ], snap_items=False)
 
     self._no_wifi_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 58, 50)
     self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 58, 50)
@@ -445,6 +454,7 @@ class NetworkSetupPage(Widget):
     back_txt = gui_app.texture("icons_mici/setup/back_new.png", 37, 32)
     self._back_button = SmallCircleIconButton(back_txt)
     self._back_button.set_click_callback(back_callback)
+    self.set_back_callback(back_callback)
 
     self._wifi_button = SmallerRoundedButton("wifi")
     self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
@@ -487,6 +497,9 @@ class NetworkSetupPage(Widget):
       self._wifi_ui.hide_event()
 
   def _render(self, _):
+    self._scroller.render(self._rect)
+    return DialogResult.NO_ACTION
+
     if self._state == NetworkSetupState.MAIN:
       self._network_header.render(rl.Rectangle(
         self._rect.x + 16,
@@ -517,6 +530,8 @@ class NetworkSetupPage(Widget):
       ))
     else:
       self._wifi_ui.render(self._rect)
+
+    return DialogResult.NO_ACTION
 
 
 class Setup(Widget):
@@ -561,6 +576,7 @@ class Setup(Widget):
     self._wifi_manager.process_callbacks()
 
   def _set_state(self, state: SetupState):
+    print('SETTING STATE', state)
     self.state = state
     if self.state == SetupState.SOFTWARE_SELECTION:
       self._software_selection_page.reset()
@@ -568,8 +584,10 @@ class Setup(Widget):
       self._custom_software_warning_page.reset()
 
     if self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
-      self._network_setup_page.show_event()
+      # self._network_setup_page.show_event()
       self._network_monitor.reset()
+      print('SHOWING NETWORK SETUP PAGE')
+      gui_app.set_modal_overlay(self._network_setup_page)
     else:
       self._network_setup_page.hide_event()
 
@@ -620,6 +638,7 @@ class Setup(Widget):
     self._network_monitor.stop()
 
   def render_network_setup(self, rect: rl.Rectangle):
+    # gui_app.set_modal_overlay(self._network_setup_page)
     has_internet = self._network_monitor.network_connected.is_set()
     self._prev_has_internet = has_internet
     self._network_setup_page.set_has_internet(has_internet)

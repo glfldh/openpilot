@@ -13,6 +13,41 @@ from openpilot.system.ui.widgets import NavWidget
 from openpilot.system.ui.lib.wifi_manager import WifiManager, Network, MeteredType, ConnectStatus
 
 
+class WifiButton(BigButton):
+  def __init__(self, wifi_manager: WifiManager):
+    self._wifi_manager = wifi_manager
+
+    self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 64, 56)
+    self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 64, 47)
+    self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 64, 47)
+    self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 64, 47)
+    super().__init__("wi-fi", "not connected", self._wifi_slash_txt, scroll=True)
+
+  def _update_state(self):
+    super()._update_state()
+
+    # Update wi-fi button with ssid and ip address
+    # TODO: make sure we handle hidden ssids
+    wifi_state = self._wifi_manager.wifi_state
+    display_network = next((n for n in self._wifi_manager.networks if n.ssid == wifi_state.ssid), None)
+    if wifi_state.status == ConnectStatus.CONNECTING:
+      self.set_text(normalize_ssid(wifi_state.ssid or "wi-fi"))
+      self.set_value("connecting...")
+    elif wifi_state.status == ConnectStatus.CONNECTED:
+      self.set_text(normalize_ssid(wifi_state.ssid or "wi-fi"))
+      self.set_value(self._wifi_manager.ipv4_address or "obtaining IP...")
+    else:
+      display_network = None
+      self.set_text("wi-fi")
+      self.set_value("not connected")
+
+    if display_network is not None:
+      strength = WifiIcon.get_strength_icon_idx(display_network.strength)
+      self.set_icon(self._wifi_full_txt if strength == 2 else self._wifi_medium_txt if strength == 1 else self._wifi_low_txt)
+    else:
+      self.set_icon(self._wifi_slash_txt)
+
+
 class NetworkPanelType(IntEnum):
   NONE = 0
   WIFI = 1
@@ -73,12 +108,13 @@ class NetworkLayoutMici(NavWidget):
     self._network_metered_btn = BigMultiToggle("network usage", ["default", "metered", "unmetered"], select_callback=network_metered_callback)
     self._network_metered_btn.set_enabled(False)
 
-    self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 64, 56)
-    self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 64, 47)
-    self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 64, 47)
-    self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 64, 47)
+    # self._wifi_slash_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 64, 56)
+    # self._wifi_low_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_low.png", 64, 47)
+    # self._wifi_medium_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_medium.png", 64, 47)
+    # self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 64, 47)
 
-    self._wifi_button = BigButton("wi-fi", "not connected", self._wifi_slash_txt, scroll=True)
+    # self._wifi_button = BigButton("wi-fi", "not connected", self._wifi_slash_txt, scroll=True)
+    self._wifi_button = WifiButton(self._wifi_manager)
     self._wifi_button.set_click_callback(lambda: self._switch_to_panel(NetworkPanelType.WIFI))
 
     # ******** Advanced settings ********
@@ -122,27 +158,6 @@ class NetworkLayoutMici(NavWidget):
     self._roaming_btn.set_visible(show_cell_settings)
     self._apn_btn.set_visible(show_cell_settings)
     self._cellular_metered_btn.set_visible(show_cell_settings)
-
-    # Update wi-fi button with ssid and ip address
-    # TODO: make sure we handle hidden ssids
-    wifi_state = self._wifi_manager.wifi_state
-    display_network = next((n for n in self._wifi_manager.networks if n.ssid == wifi_state.ssid), None)
-    if wifi_state.status == ConnectStatus.CONNECTING:
-      self._wifi_button.set_text(normalize_ssid(wifi_state.ssid or "wi-fi"))
-      self._wifi_button.set_value("connecting...")
-    elif wifi_state.status == ConnectStatus.CONNECTED:
-      self._wifi_button.set_text(normalize_ssid(wifi_state.ssid or "wi-fi"))
-      self._wifi_button.set_value(self._wifi_manager.ipv4_address or "obtaining IP...")
-    else:
-      display_network = None
-      self._wifi_button.set_text("wi-fi")
-      self._wifi_button.set_value("not connected")
-
-    if display_network is not None:
-      strength = WifiIcon.get_strength_icon_idx(display_network.strength)
-      self._wifi_button.set_icon(self._wifi_full_txt if strength == 2 else self._wifi_medium_txt if strength == 1 else self._wifi_low_txt)
-    else:
-      self._wifi_button.set_icon(self._wifi_slash_txt)
 
   def show_event(self):
     super().show_event()
