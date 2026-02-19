@@ -18,6 +18,8 @@ from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 DEBUG = False
 
 PADDING = 20
+DIALOG_TAP_FLASH_DURATION = 0.28
+DIALOG_GLOW_SPEED = 1700.0
 
 
 class BigDialogBase(NavWidget, abc.ABC):
@@ -134,6 +136,9 @@ class BigInputDialog(BigDialogBase):
     self._enter_img = gui_app.texture("icons_mici/settings/keyboard/enter.png", 76, 62)
     self._enter_disabled_img = gui_app.texture("icons_mici/settings/keyboard/enter_disabled.png", 76, 62)
     self._enter_img_alpha = FirstOrderFilter(0, 0.05, 1 / gui_app.target_fps)
+    self._alive_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
+    self._last_drag_pos: MousePos | None = None
+    self._tap_flash_t: float = 0.0
 
     # rects for top buttons
     self._top_left_button_rect = rl.Rectangle(0, 0, 0, 0)
@@ -149,6 +154,25 @@ class BigInputDialog(BigDialogBase):
     super()._update_state()
 
     last_mouse_event = gui_app.last_mouse_event
+    target_energy = 0.0
+    if last_mouse_event.left_down:
+      if self._last_drag_pos is not None:
+        dx = last_mouse_event.pos.x - self._last_drag_pos.x
+        dy = last_mouse_event.pos.y - self._last_drag_pos.y
+        speed = math.hypot(dx, dy) / max(rl.get_frame_time(), 1e-4)
+        target_energy = max(target_energy, min(1.0, speed / DIALOG_GLOW_SPEED))
+      self._last_drag_pos = last_mouse_event.pos
+      target_energy = max(target_energy, 0.15)
+    else:
+      self._last_drag_pos = None
+
+    if self._keyboard.get_candidate_character():
+      target_energy = max(target_energy, 0.45)
+
+    flash_t = max(0.0, 1.0 - (rl.get_time() - self._tap_flash_t) / DIALOG_TAP_FLASH_DURATION)
+    target_energy = max(target_energy, flash_t)
+    self._alive_energy_filter.update(target_energy)
+
     if last_mouse_event.left_down and rl.check_collision_point_rec(last_mouse_event.pos, self._top_right_button_rect) and self._backspace_img_alpha.x > 1:
       if self._backspace_held_time is None:
         self._backspace_held_time = rl.get_time()
@@ -161,6 +185,32 @@ class BigInputDialog(BigDialogBase):
       self._backspace_held_time = None
 
   def _render(self, _):
+    energy = self._alive_energy_filter.x
+    t = rl.get_time()
+    panel_rect = rl.Rectangle(self._rect.x + 6, self._rect.y + 6, self._rect.width - 12, self._rect.height - 12)
+    roundness = 0.028
+
+    # Full dialog ambiance and liquid-glass panel.
+    rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
+                      rl.Color(8, 12, 20, int(155 + 35 * energy)))
+    rl.draw_rectangle_rounded(panel_rect, roundness, 16, rl.Color(26, 34, 50, int(215 + 20 * energy)))
+    rl.draw_rectangle_gradient_v(int(panel_rect.x), int(panel_rect.y), int(panel_rect.width), int(panel_rect.height * 0.52),
+                                 rl.Color(120, 180, 255, int(38 + 45 * energy)),
+                                 rl.Color(120, 180, 255, 0))
+
+    sweep = 0.5 + 0.5 * math.sin(t * (2.7 + 1.7 * energy))
+    streak_x = int(panel_rect.x + panel_rect.width * (0.1 + 0.8 * sweep))
+    streak_w = int(38 + 50 * energy)
+    streak_h = int(panel_rect.height - 22)
+    streak_y = int(panel_rect.y + (panel_rect.height - streak_h) / 2)
+    streak_alpha = min(255, int(42 + 110 * energy))
+    streak_color = rl.Color(255, 255, 255, streak_alpha)
+    rl.draw_rectangle_gradient_h(streak_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
+    rl.draw_rectangle_gradient_h(streak_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
+
+    edge_alpha = min(255, int(30 + 90 * energy))
+    rl.draw_rectangle_rounded_lines_ex(panel_rect, roundness, 16, 2, rl.Color(168, 220, 255, edge_alpha))
+
     # draw current text so far below everything. text floats left but always stays in view
     text = self._keyboard.text()
     candidate_char = self._keyboard.get_candidate_character()
@@ -171,6 +221,13 @@ class BigInputDialog(BigDialogBase):
     text_field_rect = rl.Rectangle(text_x, int(self._rect.y + PADDING) - bg_block_margin,
                                    int(self._rect.width - text_x * 2),
                                    int(text_size.y))
+
+    # Make text area itself feel reactive.
+    text_bg = rl.Rectangle(text_field_rect.x - 12, text_field_rect.y - 7, text_field_rect.width + 24, text_field_rect.height + 14)
+    rl.draw_rectangle_rounded(text_bg, 0.2, 10, rl.Color(45, 58, 88, int(95 + 85 * energy)))
+    rl.draw_rectangle_gradient_v(int(text_bg.x), int(text_bg.y), int(text_bg.width), int(text_bg.height * 0.65),
+                                 rl.Color(220, 236, 255, int(22 + 34 * energy)),
+                                 rl.Color(220, 236, 255, 0))
 
     # draw text input
     # push text left with a gradient on left side if too long
@@ -242,6 +299,7 @@ class BigInputDialog(BigDialogBase):
 
   def _handle_mouse_press(self, mouse_pos: MousePos):
     super()._handle_mouse_press(mouse_pos)
+    self._tap_flash_t = rl.get_time()
     # TODO: need to track where press was so enter and back can activate on release rather than press
     #  or turn into icon widgets :eyes_open:
     # handle backspace icon click

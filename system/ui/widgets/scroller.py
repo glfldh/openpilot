@@ -346,8 +346,14 @@ class Scroller(Widget):
       # Tiny center pulse gives an "alive" feel even at low speed.
       center_weight = 1.0 - center_t
       speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
+      interaction_boost = 0.0
+      if self.scroll_panel.state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL, ScrollState.AUTO_SCROLL):
+        interaction_boost += 0.32
+      if self.is_pressed:
+        interaction_boost += 0.18
+      glow_energy = min(1.0, speed_energy + interaction_boost)
       # Keep a very light idle pulse, stronger only while moving.
-      pulse_strength = CENTER_PULSE_AMPLITUDE * (0.18 + 0.82 * speed_energy)
+      pulse_strength = CENTER_PULSE_AMPLITUDE * (0.18 + 0.82 * glow_energy)
       pulse = 1.0 + pulse_strength * center_weight * np.sin(rl.get_time() * (2 * np.pi * CENTER_PULSE_HZ))
 
       # Combine with zoom filter (when DO_ZOOM enabled)
@@ -386,7 +392,7 @@ class Scroller(Widget):
 
       # Liquid glass overlay: subtle tint, moving specular sweep, and edge glow.
       if item is not self._line_separator:
-        glass_alpha = LIQUID_GLASS_BASE_ALPHA + LIQUID_GLASS_ENERGY_ALPHA * speed_energy
+        glass_alpha = LIQUID_GLASS_BASE_ALPHA + LIQUID_GLASS_ENERGY_ALPHA * glow_energy
 
         inset = 2
         glass_rect = rl.Rectangle(item.rect.x + inset, item.rect.y + inset,
@@ -408,7 +414,7 @@ class Scroller(Widget):
         rl.draw_rectangle_rounded(inner_rect, roundness, 10, inner_tint)
 
         gloss_h = max(4, int(glass_rect.height * 0.44))
-        gloss_alpha = int(255 * glass_alpha * 2.2)
+        gloss_alpha = min(255, int(255 * glass_alpha * 2.2))
         rl.draw_rectangle_gradient_v(int(glass_rect.x), int(glass_rect.y),
                                      int(glass_rect.width), gloss_h,
                                      rl.Color(255, 255, 255, gloss_alpha), rl.Color(255, 255, 255, 0))
@@ -422,19 +428,19 @@ class Scroller(Widget):
 
         sweep_phase = rl.get_time() * LIQUID_GLASS_SWEEP_HZ + item_center * 0.017
         sweep_x = int(glass_rect.x + glass_rect.width * (0.15 + 0.7 * (0.5 + 0.5 * np.sin(sweep_phase))))
-        streak_w = max(8, int(14 + 18 * speed_energy))
+        streak_w = max(8, int(14 + 18 * glow_energy))
         streak_h = max(6, int(glass_rect.height - 6))
         streak_y = int(glass_rect.y + (glass_rect.height - streak_h) / 2)
-        streak_color = rl.Color(255, 255, 255, int(255 * glass_alpha * 2.0))
+        streak_color = rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 2.0)))
         rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w, streak_h,
                                      rl.Color(255, 255, 255, 0), streak_color)
         rl.draw_rectangle_gradient_h(sweep_x, streak_y, streak_w, streak_h,
                                      streak_color, rl.Color(255, 255, 255, 0))
 
         # Chromatic edge split for stronger liquid glass character
-        edge_main = rl.Color(175, 226, 255, int(255 * (0.18 + 0.30 * speed_energy)))
-        edge_cyan = rl.Color(115, 225, 255, int(255 * (0.10 + 0.20 * speed_energy)))
-        edge_violet = rl.Color(190, 142, 255, int(255 * (0.09 + 0.18 * speed_energy)))
+        edge_main = rl.Color(175, 226, 255, int(255 * (0.18 + 0.30 * glow_energy)))
+        edge_cyan = rl.Color(115, 225, 255, int(255 * (0.10 + 0.20 * glow_energy)))
+        edge_violet = rl.Color(190, 142, 255, int(255 * (0.09 + 0.18 * glow_energy)))
         rl.draw_rectangle_rounded_lines_ex(glass_rect, roundness, 10, 2, edge_main)
         rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(glass_rect.x - 1, glass_rect.y - 1, glass_rect.width, glass_rect.height),
                                            roundness, 10, 1, edge_cyan)
@@ -442,16 +448,18 @@ class Scroller(Widget):
                                            roundness, 10, 1, edge_violet)
 
         # Tiny caustic spark along the sweep.
-        caustic_r = max(2, int(2 + 3 * speed_energy))
+        caustic_r = max(2, int(2 + 3 * glow_energy))
         caustic_y = int(glass_rect.y + glass_rect.height * (0.32 + 0.25 * np.sin(sweep_phase * 1.37)))
         rl.draw_circle(sweep_x, caustic_y, float(caustic_r),
-                       rl.Color(255, 255, 255, int(255 * glass_alpha * 1.5)))
+                       rl.Color(255, 255, 255, min(255, int(255 * glass_alpha * 1.5))))
 
       if needs_transform:
         rl.rl_pop_matrix()
 
     # Subtle color sparkles: energy-reactive and bounded to scroller viewport.
     speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
+    if self.scroll_panel.state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL, ScrollState.AUTO_SCROLL):
+      speed_energy = min(1.0, speed_energy + 0.35)
     if self._horizontal and len(self._visible_items) > 0:
       t = rl.get_time()
       for i in range(SPARKLE_COUNT):

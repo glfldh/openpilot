@@ -2,6 +2,7 @@ from collections.abc import Callable
 from enum import IntEnum
 
 import pyray as rl
+import numpy as np
 
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.widgets import Widget
@@ -26,6 +27,7 @@ class ButtonStyle(IntEnum):
 ICON_PADDING = 15
 DEFAULT_BUTTON_FONT_SIZE = 60
 ACTION_BUTTON_FONT_SIZE = 48
+BUTTON_SHINE_DURATION = 0.22
 
 BUTTON_TEXT_COLOR = {
   ButtonStyle.NORMAL: rl.Color(228, 228, 228, 255),
@@ -103,6 +105,7 @@ class Button(Widget):
 
     self._click_callback = click_callback
     self._multi_touch = multi_touch
+    self._shine_until_t = 0.0
 
   def set_text(self, text):
     self._label.set_text(text)
@@ -123,6 +126,13 @@ class Button(Widget):
       self._background_color = BUTTON_DISABLED_BACKGROUND_COLORS.get(self._button_style, rl.Color(51, 51, 51, 255))
       self._label.set_text_color(BUTTON_DISABLED_TEXT_COLORS.get(self._button_style, rl.Color(228, 228, 228, 51)))
 
+  def _handle_mouse_press(self, mouse_pos: MousePos):
+    self._shine_until_t = max(self._shine_until_t, rl.get_time() + BUTTON_SHINE_DURATION)
+
+  def _handle_mouse_release(self, mouse_pos: MousePos):
+    self._shine_until_t = max(self._shine_until_t, rl.get_time() + BUTTON_SHINE_DURATION)
+    super()._handle_mouse_release(mouse_pos)
+
   def _render(self, _):
     roundness = self._border_radius / (min(self._rect.width, self._rect.height) / 2)
     if self._button_style == ButtonStyle.TRANSPARENT_WHITE_BORDER:
@@ -130,6 +140,29 @@ class Button(Widget):
       rl.draw_rectangle_rounded_lines_ex(self._rect, roundness, 10, 2, rl.WHITE)
     else:
       rl.draw_rectangle_rounded(self._rect, roundness, 10, self._background_color)
+
+    shine_t = 0.0
+    if self.enabled:
+      if self.is_pressed:
+        shine_t = 1.0
+      else:
+        shine_t = max(0.0, (self._shine_until_t - rl.get_time()) / BUTTON_SHINE_DURATION)
+
+    if shine_t > 0.0:
+      gloss_h = int(self._rect.height * (0.36 + 0.14 * shine_t))
+      gloss_alpha = min(255, int(255 * (0.07 + 0.2 * shine_t)))
+      rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y), int(self._rect.width), gloss_h,
+                                   rl.Color(255, 255, 255, gloss_alpha), rl.Color(255, 255, 255, 0))
+
+      sweep = 0.5 + 0.5 * np.sin(rl.get_time() * 11.0)
+      streak_x = int(self._rect.x + self._rect.width * (0.12 + 0.76 * sweep))
+      streak_w = max(4, int(8 + 18 * shine_t))
+      streak_h = max(6, int(self._rect.height - 6))
+      streak_y = int(self._rect.y + (self._rect.height - streak_h) / 2)
+      streak_alpha = min(255, int(255 * (0.15 + 0.35 * shine_t)))
+      streak_color = rl.Color(255, 255, 255, streak_alpha)
+      rl.draw_rectangle_gradient_h(streak_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
+      rl.draw_rectangle_gradient_h(streak_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
     self._label.render(self._rect)
 
 

@@ -20,6 +20,10 @@ KEY_MIN_ANIMATION_TIME = 0.075  # s
 
 DEBUG = False
 ANIMATION_SCALE = 0.65
+ALIVE_WAVE_AMPLITUDE = 4.0
+ALIVE_WAVE_HZ = 2.2
+KEY_ENERGY_SPEED = 1600.0
+TAP_FLASH_DURATION = 0.24
 
 
 def zip_repeat(a, b):
@@ -73,6 +77,11 @@ class Key(Widget):
 
   def set_alpha(self, alpha: float):
     self._alpha_filter.update(alpha)
+
+  def set_color(self, color: rl.Color):
+    self._color.r = color.r
+    self._color.g = color.g
+    self._color.b = color.b
 
   def get_position(self) -> tuple[float, float]:
     return self._rect.x, self._rect.y
@@ -210,6 +219,12 @@ class MiciKeyboard(Widget):
 
     self._bg_scale_filter = BounceFilter(1.0, 0.1 * ANIMATION_SCALE, 1 / gui_app.target_fps)
     self._selected_key_filter = FirstOrderFilter(0.0, 0.075 * ANIMATION_SCALE, 1 / gui_app.target_fps)
+    self._pointer_speed_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
+    self._last_drag_pos: MousePos | None = None
+    self._last_selected_key: Key | None = None
+    self._selection_ripple_t: float = rl.get_time()
+    self._tap_flash_t: float = 0.0
+    self._tap_flash_pos: tuple[float, float] | None = None
 
   def get_candidate_character(self) -> str:
     # return str of character about to be added to text
@@ -247,6 +262,13 @@ class MiciKeyboard(Widget):
       self._dragging_on_keyboard = False
 
     if mouse_event.left_down and self._dragging_on_keyboard:
+      if self._last_drag_pos is not None:
+        dx = mouse_event.pos.x - self._last_drag_pos.x
+        dy = mouse_event.pos.y - self._last_drag_pos.y
+        speed = fast_euclidean_distance(dx, dy) / max(rl.get_frame_time(), 1e-4)
+        self._pointer_speed_filter.update(speed)
+      self._last_drag_pos = mouse_event.pos
+
       self._closest_key = self._get_closest_key()
       if self._selected_key_t is None:
         self._selected_key_t = rl.get_time()
@@ -254,6 +276,8 @@ class MiciKeyboard(Widget):
       # unselect key temporarily if mouse goes above keyboard
       if mouse_event.pos.y <= keyboard_pos_y:
         self._closest_key = (None, float('inf'))
+    elif mouse_event.left_released:
+      self._last_drag_pos = None
 
     if DEBUG:
       print('HANDLE MOUSE EVENT', mouse_event, self._closest_key[0].char if self._closest_key[0] else 'None')
@@ -287,6 +311,11 @@ class MiciKeyboard(Widget):
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if self._closest_key[0] is not None:
+      self._tap_flash_pos = (self._closest_key[0].rect.x + self._closest_key[0].rect.width / 2,
+                             self._closest_key[0].rect.y + self._closest_key[0].rect.height / 2)
+      self._tap_flash_t = rl.get_time()
+
+    if self._closest_key[0] is not None:
       if self._closest_key[0] == self._caps_key:
         self._set_uppercase(True)
       elif self._closest_key[0] in (self._123_key, self._123_key2):
@@ -317,6 +346,12 @@ class MiciKeyboard(Widget):
   def _update_state(self):
     # update selected key filter
     self._selected_key_filter.update(self._closest_key[0] is not None)
+    if not self._dragging_on_keyboard:
+      self._pointer_speed_filter.update(0.0)
+
+    if self._closest_key[0] is not self._last_selected_key:
+      self._selection_ripple_t = rl.get_time()
+      self._last_selected_key = self._closest_key[0]
 
     # unselect key after animation plays
     if self._unselect_key_t is not None and rl.get_time() > self._unselect_key_t:
@@ -325,6 +360,8 @@ class MiciKeyboard(Widget):
       self._selected_key_t = None
 
   def _lay_out_keys(self, bg_x, bg_y, keys: list[list[Key]]):
+    t = rl.get_time()
+    energy = min(1.0, self._pointer_speed_filter.x / KEY_ENERGY_SPEED)
     key_rect = rl.Rectangle(bg_x, bg_y, self._txt_bg.width, self._txt_bg.height)
     for row_idx, row in enumerate(keys):
       padding = KEYBOARD_ROW_PADDING[row_idx]
@@ -334,19 +371,33 @@ class MiciKeyboard(Widget):
         key_y = key_rect.y + KEYBOARD_COLUMN_PADDING + row_idx * step_y
 
         if self._closest_key[0] is None:
+          # Idle shimmer wave so keyboard feels alive even before touch.
+          wave = np.sin(t * ALIVE_WAVE_HZ + key_x * 0.015 + row_idx * 0.7) * ALIVE_WAVE_AMPLITUDE
+          key_y += wave * (0.2 + 0.35 * energy)
           key.set_alpha(1.0)
           key.set_font_size(CHAR_FONT_SIZE)
+          key.set_color(rl.Color(240, 246, 255, 255))
         elif key == self._closest_key[0]:
           # push key up with a max and inward so user can see key easier
           key_y = max(key_y - 120, 40)
           key_x += np.interp(key_x, [self._rect.x, self._rect.x + self._rect.width], [100, -100])
           key.set_alpha(1.0)
           key.set_font_size(SELECTED_CHAR_FONT_SIZE)
+          key.set_color(rl.Color(255, 255, 255, 255))
 
-          # draw black circle behind selected key
-          circle_alpha = int(self._selected_key_filter.x * 225)
+          # Draw energetic selected bubble behind key.
+          circle_alpha = int(self._selected_key_filter.x * (180 + 55 * energy))
+          pulse = 1.0 + 0.08 * np.sin(t * 12.0)
+          sel_r = SELECTED_CHAR_FONT_SIZE * pulse
           rl.draw_circle_gradient(int(key_x + key.rect.width / 2), int(key_y + key.rect.height / 2),
-                                  SELECTED_CHAR_FONT_SIZE, rl.Color(0, 0, 0, circle_alpha), rl.BLANK)
+                                  sel_r, rl.Color(86, 132, 255, circle_alpha), rl.Color(28, 28, 42, 0))
+
+          # Ripple on key transitions.
+          ripple_t = min(1.0, max(0.0, (t - self._selection_ripple_t) / 0.18))
+          ripple_r = SELECTED_CHAR_FONT_SIZE * (0.65 + ripple_t * 0.8)
+          ripple_a = int((1.0 - ripple_t) * (120 + 70 * energy))
+          rl.draw_circle_lines(int(key_x + key.rect.width / 2), int(key_y + key.rect.height / 2), ripple_r,
+                               rl.Color(176, 212, 255, ripple_a))
         else:
           # move other keys away from selected key a bit
           dx = key.original_position.x - self._closest_key[0].original_position.x
@@ -368,6 +419,8 @@ class MiciKeyboard(Widget):
           key_alpha = np.interp(distance_from_selected_key, [0, 100], [1.0, 0.35])
           key.set_alpha(key_alpha)
           key.set_font_size(font_size)
+          tint = np.interp(distance_from_selected_key, [0, 180], [1.0, 0.0])
+          key.set_color(rl.Color(int(225 + 24 * tint), int(238 + 14 * tint), 255, 255))
 
         # TODO: I like the push amount, so we should clip the pos inside the keyboard rect
         key.set_parent_rect(self._rect)
@@ -384,6 +437,36 @@ class MiciKeyboard(Widget):
                             self._txt_bg.width * scale, self._txt_bg.height)
 
     rl.draw_texture_pro(self._txt_bg, src_rec, dest_rec, rl.Vector2(0, 0), 0.0, rl.WHITE)
+
+    # Liquid/glass keyboard panel pass.
+    energy = min(1.0, self._pointer_speed_filter.x / KEY_ENERGY_SPEED)
+    panel = rl.Rectangle(dest_rec.x + 3, dest_rec.y + 2, dest_rec.width - 6, dest_rec.height - 4)
+    roundness = min(1.0, 26 / max(1.0, min(panel.width, panel.height) / 2))
+    glass_alpha = 0.07 + 0.20 * energy
+    rl.draw_rectangle_rounded(panel, roundness, 10, rl.Color(118, 176, 255, int(255 * glass_alpha)))
+    rl.draw_rectangle_gradient_v(int(panel.x), int(panel.y), int(panel.width), int(panel.height * 0.52),
+                                 rl.Color(255, 255, 255, int(255 * glass_alpha * 1.5)), rl.Color(255, 255, 255, 0))
+    sweep_phase = rl.get_time() * (3.2 + 1.8 * energy)
+    sweep_x = int(panel.x + panel.width * (0.1 + 0.8 * (0.5 + 0.5 * np.sin(sweep_phase))))
+    streak_w = max(8, int(12 + 16 * energy))
+    streak_h = int(panel.height - 10)
+    streak_y = int(panel.y + (panel.height - streak_h) / 2)
+    streak_color = rl.Color(255, 255, 255, int(255 * glass_alpha * 1.8))
+    rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
+    rl.draw_rectangle_gradient_h(sweep_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
+    rl.draw_rectangle_rounded_lines_ex(panel, roundness, 10, 2, rl.Color(172, 218, 255, int(255 * (0.10 + 0.26 * energy))))
+
+    if self._tap_flash_pos is not None:
+      dt = rl.get_time() - self._tap_flash_t
+      if dt <= TAP_FLASH_DURATION:
+        tap_t = dt / TAP_FLASH_DURATION
+        flash_r = 26 + 90 * tap_t
+        flash_a = int(255 * (1.0 - tap_t) * 0.42)
+        cx, cy = self._tap_flash_pos
+        rl.draw_circle_gradient(int(cx), int(cy), flash_r,
+                                rl.Color(176, 228, 255, flash_a), rl.Color(176, 228, 255, 0))
+      else:
+        self._tap_flash_pos = None
 
     # draw keys
     if not self._initialized:
