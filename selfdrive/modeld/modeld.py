@@ -7,6 +7,7 @@ if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
 from tinygrad.tensor import Tensor
+from tinygrad import TinyJit
 import time
 import pickle
 import numpy as np
@@ -29,11 +30,13 @@ from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 
+from openpilot.selfdrive.modeld.compile_warp import make_frame_prepare, make_update_both_imgs
+from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
-VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl'
+# VISION_PKL_PATH = Path(__file__).parent / 'models/driving_vision_tinygrad.pkl'
 POLICY_PKL_PATH = Path(__file__).parent / 'models/driving_policy_tinygrad.pkl'
 VISION_METADATA_PATH = Path(__file__).parent / 'models/driving_vision_metadata.pkl'
 POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.pkl'
@@ -143,6 +146,7 @@ class ModelState:
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
 
   def __init__(self):
+    # TODO what makes those?
     with open(VISION_METADATA_PATH, 'rb') as f:
       vision_metadata = pickle.load(f)
       self.vision_input_shapes =  vision_metadata['input_shapes']
@@ -176,16 +180,16 @@ class ModelState:
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
     self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
-    self.update_imgs = None
-    with open(VISION_PKL_PATH, "rb") as f:
-      self.vision_run = pickle.load(f)
 
-    with open(POLICY_PKL_PATH, "rb") as f:
-      self.policy_run = pickle.load(f)
+    self.initialized = False
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
     return parsed_model_outputs
+
+  @TinyJit
+  def run_policy(self):
+    pass
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
@@ -193,13 +197,21 @@ class ModelState:
     inputs['desire_pulse'][0] = 0
     new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
     self.prev_desire[:] = inputs['desire_pulse']
-    if self.update_imgs is None:
+
+    if not self.initialized:
       for key in bufs.keys():
-        w, h = bufs[key].width, bufs[key].height
-        self.frame_buf_params[key] = get_nv12_info(w, h)
-      warp_path = MODELS_DIR / f'warp_{w}x{h}_tinygrad.pkl'
-      with open(warp_path, "rb") as f:
-        self.update_imgs = pickle.load(f)
+        cam_w, cam_h = bufs[key].width, bufs[key].height
+        self.frame_buf_params[key] = get_nv12_info(self.cam_w, self.cam_h)
+
+      if self.jitting:
+        model_w, model_h = MEDMODEL_INPUT_SIZE
+        frame_prepare = make_frame_prepare(cam_w, cam_h, model_w, model_h)
+        self.update_imgs = make_update_both_imgs(frame_prepare, model_w, model_h)
+      else:
+        policy_path = MODELS_DIR / f'policy_{cam_w}x{cam_h}_tinygrad.pkl'
+        with open(policy_path, "rb") as f:
+          self.run_policy = pickle.load(f)
+      self.initialized = True
 
     for key in bufs.keys():
       ptr = bufs[key].data.ctypes.data
@@ -211,23 +223,30 @@ class ModelState:
     for key in bufs.keys():
       self.transforms_np[key][:,:] = transforms[key][:,:]
 
+    if prepare_only: # moved this before the warp
+      return None
+
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
     self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
     vision_inputs = {'img': out[1], 'big_img': out[3]}
 
-    if prepare_only:
-      return None
+    # TODO need some buffer for the vision features, same as img_queues, features_queue
+    # TODO full_input_queues but it doesn't contain the images?
+    # TODO feed to run_policy
+    # self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
+    # for k in ['desire_pulse', 'features_buffer']:
+    #   self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
+    # self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
+    vision_output, policy_output = self.run_policy(self.full_frames, self.img_queues, self.transforms)
 
-    self.vision_output = self.vision_run(**vision_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
+    # TODO sync device, measure copy out
+    # TODO why do we init the output to a numpy array, why do we assign it as a property?
+    # parse outputs
+    self.vision_output = vision_output.uop.base.buffer.numpy().flatten()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-    self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
-    for k in ['desire_pulse', 'features_buffer']:
-      self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
-    self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
-
-    self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
+    self.policy_output = policy_output.uop.base.buffer.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
@@ -383,6 +402,7 @@ def main(demo=False):
     model_output = model.run(bufs, transforms, inputs, prepare_only)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
+    print(f"Model execution time: {model_execution_time:.6f} seconds")
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')
