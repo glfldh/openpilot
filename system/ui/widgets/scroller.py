@@ -48,6 +48,7 @@ SPARKLE_ENERGY_ALPHA = 0.13
 LIQUID_GLASS_BASE_ALPHA = 0.12
 LIQUID_GLASS_ENERGY_ALPHA = 0.20
 LIQUID_GLASS_SWEEP_HZ = 4.1
+SCROLLER_BG_AMBIENT_ALPHA = 0.045
 
 
 class LineSeparator(Widget):
@@ -267,9 +268,16 @@ class Scroller(Widget):
       else:
         # TODO: this doesn't handle two small buttons at the edges well
         if self._horizontal:
-          snap_delta_pos = (center_pos - (snap_item.rect.x + snap_item.rect.width / 2)) / 10
-          snap_delta_pos = min(snap_delta_pos, -self.scroll_panel.get_offset() / 10)
-          snap_delta_pos = max(snap_delta_pos, (self._rect.width - self.scroll_panel.get_offset() - content_size) / 10)
+          # Horizontal only: avoid fighting momentum, then apply gentler final snap.
+          if self.scroll_panel.state != ScrollState.STEADY:
+            self._scroll_snap_filter.x = 0
+            return self.scroll_panel.get_offset()
+
+          snap_divisor = 16.0  # lower snap force than vertical for smoother settling
+          snap_delta_pos = (center_pos - (snap_item.rect.x + snap_item.rect.width / 2)) / snap_divisor
+          snap_delta_pos = min(snap_delta_pos, -self.scroll_panel.get_offset() / snap_divisor)
+          snap_delta_pos = max(snap_delta_pos, (self._rect.width - self.scroll_panel.get_offset() - content_size) / snap_divisor)
+          snap_delta_pos = np.clip(snap_delta_pos, -10.0, 10.0)
         else:
           snap_delta_pos = (center_pos - (snap_item.rect.y + snap_item.rect.height / 2)) / 10
           snap_delta_pos = min(snap_delta_pos, -self.scroll_panel.get_offset() / 10)
@@ -357,6 +365,22 @@ class Scroller(Widget):
   def _render(self, _):
     rl.begin_scissor_mode(int(self._rect.x), int(self._rect.y),
                           int(self._rect.width), int(self._rect.height))
+
+    # Subtle ambient backdrop inside scroller viewport.
+    t = rl.get_time()
+    bg_a = int(255 * SCROLLER_BG_AMBIENT_ALPHA)
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y),
+                                 int(self._rect.width), int(self._rect.height),
+                                 rl.Color(105, 165, 255, bg_a), rl.Color(16, 24, 42, 0))
+    # Soft drifting blobs for depth (kept intentionally faint).
+    blob_a = int(255 * SCROLLER_BG_AMBIENT_ALPHA * 0.65)
+    blob_r = max(18, int(min(self._rect.width, self._rect.height) * 0.14))
+    bx1 = self._rect.x + self._rect.width * (0.25 + 0.12 * np.sin(t * 0.42))
+    by1 = self._rect.y + self._rect.height * (0.35 + 0.10 * np.cos(t * 0.37))
+    bx2 = self._rect.x + self._rect.width * (0.72 + 0.10 * np.cos(t * 0.33 + 1.2))
+    by2 = self._rect.y + self._rect.height * (0.62 + 0.08 * np.sin(t * 0.45 + 0.8))
+    rl.draw_circle_gradient(int(bx1), int(by1), float(blob_r), rl.Color(140, 205, 255, blob_a), rl.Color(140, 205, 255, 0))
+    rl.draw_circle_gradient(int(bx2), int(by2), float(blob_r * 1.1), rl.Color(176, 150, 255, blob_a), rl.Color(176, 150, 255, 0))
 
     for item in reversed(self._visible_items):
       # Skip rendering if not in viewport

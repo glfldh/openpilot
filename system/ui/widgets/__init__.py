@@ -199,6 +199,8 @@ DISMISS_PUSH_OFFSET = 50 + NAV_BAR_MARGIN + NAV_BAR_HEIGHT  # px extra to push d
 DISMISS_TIME_SECONDS = 2.0
 NAV_EPIC_PARTICLE_COUNT = 9
 NAV_EPIC_AURA_MAX_ALPHA = 92
+NAV_INTRO_BOUNCE_TIME = 0.9
+NAV_INTRO_PARTICLE_BOOST = 10
 
 
 class NavBar(Widget):
@@ -306,6 +308,7 @@ class NavWidget(Widget, abc.ABC):
 
     self._nav_bar_y_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
     self._fx_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
+    self._intro_t: float | None = None
 
     self._set_up = False
 
@@ -388,9 +391,12 @@ class NavWidget(Widget, abc.ABC):
                                                                           original_enabled))
 
     if self._trigger_animate_in:
-      self._pos_filter.x = self._rect.height
+      self._pos_filter.x = self._rect.height + 110
+      self._pos_filter.velocity.x = -105
+      self._pos_filter.bounce = 2.2
       self._nav_bar_y_filter.x = -NAV_BAR_MARGIN - NAV_BAR_HEIGHT
       self._nav_bar_show_time = rl.get_time()
+      self._intro_t = rl.get_time()
       self._trigger_animate_in = False
 
     new_y = 0.0
@@ -428,7 +434,15 @@ class NavWidget(Widget, abc.ABC):
       motion_energy = max(motion_energy, 0.85)
     self._nav_bar.set_drag_progress(drag_progress)
     self._nav_bar.set_energy(motion_energy)
-    self._fx_energy_filter.update(max(motion_energy, drag_progress * 0.72))
+    intro_boost = 0.0
+    if self._intro_t is not None:
+      intro_dt = rl.get_time() - self._intro_t
+      if intro_dt < NAV_INTRO_BOUNCE_TIME:
+        intro_boost = (1.0 - intro_dt / NAV_INTRO_BOUNCE_TIME) ** 1.4
+      else:
+        self._intro_t = None
+        self._pos_filter.bounce = 1.0
+    self._fx_energy_filter.update(max(motion_energy, drag_progress * 0.72, intro_boost))
 
     self.set_position(self._rect.x, new_y)
 
@@ -473,13 +487,23 @@ class NavWidget(Widget, abc.ABC):
         # Motion particles near nav bar.
         bar_center_x = bar_x + self._nav_bar.rect.width / 2
         bar_y = self._nav_bar_y_filter.x + NAV_BAR_HEIGHT / 2
-        for i in range(NAV_EPIC_PARTICLE_COUNT):
+        particle_count = NAV_EPIC_PARTICLE_COUNT + (NAV_INTRO_PARTICLE_BOOST if self._intro_t is not None else 0)
+        for i in range(particle_count):
           p_phase = t * (2.8 + 0.45 * i + 1.4 * fx_energy) + i * 1.47
           px = bar_center_x + math.sin(p_phase * 0.82) * (18 + 36 * fx_energy)
           py = bar_y + math.cos(p_phase * 1.21) * (4 + 10 * fx_energy)
           p_alpha = int(255 * (0.08 + 0.20 * fx_energy) * (0.45 + 0.55 * (0.5 + 0.5 * math.sin(p_phase * 1.7))))
           pr = 1 + int(2 * fx_energy)
           rl.draw_circle(int(px), int(py), pr, rl.Color(168, 228, 255, min(255, p_alpha)))
+
+        # Intro-only ribbon trails to emphasize physical launch-in.
+        if self._intro_t is not None:
+          trail_alpha = min(255, int(255 * 0.22 * fx_energy))
+          for i in range(5):
+            off = i * 7
+            rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y - off), int(self._rect.width), 6,
+                                         rl.Color(132, 214, 255, trail_alpha // (i + 1)),
+                                         rl.Color(132, 214, 255, 0))
 
       self._nav_bar.set_position(bar_x, round(self._nav_bar_y_filter.x))
       self._nav_bar.render()

@@ -402,7 +402,7 @@ class BigInputDialog(BigDialogBase):
         ty = flyout_target_y
         x = sx + (tx - sx) * ease
         y = sy + (ty - sy) * ease - self.KEY_FLYOUT_ARC_HEIGHT * 4.0 * ease * (1.0 - ease)
-        alpha = int(255 * (1.0 - p) ** 1.35)
+        alpha = min(255, int(255 * (0.35 + 0.65 * (1.0 - p) ** 0.85)))
         size = int(self.TEXT_INPUT_SIZE * (1.15 - 0.15 * p))
         ch = str(flyout["c"])
         ch_size = measure_text_cached(font, ch, size)
