@@ -208,9 +208,19 @@ class MiciHomeLayout(Widget):
     r2 = max(70, int(min(self._rect.width, self._rect.height) * 0.17))
     rl.draw_circle_gradient(int(bx1), int(by1), float(r1), rl.Color(120, 190, 255, blob_a), rl.Color(120, 190, 255, 0))
     rl.draw_circle_gradient(int(bx2), int(by2), float(r2), rl.Color(176, 142, 255, blob_a), rl.Color(176, 142, 255, 0))
+    # Thin atmosphere sweep keeps the full scene moving.
+    sweep = 0.5 + 0.5 * math.sin(t * (0.9 + 0.7 * alive))
+    sweep_x = int(self._rect.x + self._rect.width * (-0.22 + 1.42 * sweep))
+    sweep_w = int(150 + 90 * alive)
+    sweep_h = int(self._rect.height * 0.68)
+    sweep_y = int(self._rect.y + self._rect.height * 0.08)
+    sweep_alpha = int(255 * (0.025 + 0.045 * alive))
+    rl.draw_rectangle_gradient_h(sweep_x - sweep_w, sweep_y, sweep_w * 2, sweep_h,
+                                 rl.Color(160, 214, 255, 0), rl.Color(160, 214, 255, sweep_alpha))
 
     # TODO: why is there extra space here to get it to be flush?
-    text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 16)
+    title_float = math.sin(t * (1.6 + 0.8 * alive)) * (1.8 + 1.9 * alive)
+    text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 16 + title_float)
     # Halo behind home title.
     halo_pulse = 0.5 + 0.5 * math.sin(t * (2.6 + 2.0 * alive))
     halo_alpha = int(255 * (0.05 + 0.12 * alive) * (0.65 + 0.35 * halo_pulse))
@@ -222,7 +232,8 @@ class MiciHomeLayout(Widget):
     if self._version_text is not None:
       # release branch
       release_branch = self._version_text[1] in RELEASE_BRANCHES
-      version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16, 100, 44)
+      version_float = math.sin(t * (1.2 + 0.5 * alive) + 0.9) * (1.2 + 1.6 * alive)
+      version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16 + version_float, 100, 44)
       self._version_label.set_text(self._version_text[0])
       self._version_label.set_position(version_pos.x, version_pos.y)
       self._version_label.render()
@@ -256,13 +267,27 @@ class MiciHomeLayout(Widget):
     # Draw settings icon in bottom left corner
     t = rl.get_time()
     alive = self._alive_energy_filter.x
-    icon_glow_a = int(255 * (0.06 + 0.12 * alive))
-    icon_y = self._rect.y + self.rect.height - self._settings_txt.height / 2 - Y_CENTER
-    rl.draw_circle_gradient(int(last_x + self._settings_txt.width / 2), int(icon_y + self._settings_txt.height / 2),
-                            30 + 8 * (0.5 + 0.5 * math.sin(t * 4.0)),
-                            rl.Color(150, 210, 255, icon_glow_a), rl.Color(150, 210, 255, 0))
-    rl.draw_texture(self._settings_txt, int(last_x), int(icon_y), rl.Color(255, 255, 255, int(255 * 0.9)))
-    last_x = last_x + self._settings_txt.width + ITEM_SPACING
+    def draw_alive_icon(texture: rl.Texture, x: float, phase: float, glow_rgb: tuple[int, int, int], alpha: int = 230,
+                        y_offset: float = 0.0) -> float:
+      bob = math.sin(t * (2.2 + 1.2 * alive) + phase) * (1.2 + 2.1 * alive)
+      pulse = 0.5 + 0.5 * math.sin(t * (3.4 + 1.6 * alive) + phase * 1.6)
+      icon_y = self._rect.y + self.rect.height - texture.height / 2 - Y_CENTER + bob + y_offset
+      glow_a = int(255 * (0.05 + 0.17 * alive) * (0.55 + 0.45 * pulse))
+      glow_r = 26 + 10 * pulse + 8 * alive
+      rl.draw_circle_gradient(int(x + texture.width / 2), int(icon_y + texture.height / 2), glow_r,
+                              rl.Color(glow_rgb[0], glow_rgb[1], glow_rgb[2], glow_a),
+                              rl.Color(glow_rgb[0], glow_rgb[1], glow_rgb[2], 0))
+      # Tiny top sheen for "alive" feel.
+      sheen_w = int(texture.width * 0.5)
+      sheen_x = int(x + texture.width * (0.25 + 0.35 * pulse))
+      sheen_y = int(icon_y + texture.height * 0.16)
+      rl.draw_rectangle_gradient_h(sheen_x - sheen_w // 2, sheen_y, sheen_w, 2,
+                                   rl.Color(255, 255, 255, 0),
+                                   rl.Color(255, 255, 255, int(46 + 45 * alive)))
+      rl.draw_texture(texture, int(x), int(icon_y), rl.Color(255, 255, 255, alpha))
+      return x + texture.width + ITEM_SPACING
+
+    last_x = draw_alive_icon(self._settings_txt, last_x, 0.2, (150, 210, 255), alpha=int(255 * 0.9))
 
     # draw network
     if self._net_type == NetworkType.wifi:
@@ -272,9 +297,7 @@ class MiciHomeLayout(Widget):
                       3: self._wifi_medium_txt,
                       4: self._wifi_full_txt,
                       5: self._wifi_full_txt}.get(self._net_strength, self._wifi_low_txt)
-      rl.draw_texture(draw_net_txt, int(last_x),
-                      int(self._rect.y + self.rect.height - draw_net_txt.height / 2 - Y_CENTER), rl.Color(255, 255, 255, int(255 * 0.9)))
-      last_x += draw_net_txt.width + ITEM_SPACING
+      last_x = draw_alive_icon(draw_net_txt, last_x, 1.0, (134, 220, 255), alpha=int(255 * 0.9))
 
     elif self._net_type in (NetworkType.cell2G, NetworkType.cell3G, NetworkType.cell4G, NetworkType.cell5G):
       draw_net_txt = {0: self._cell_none_txt,
@@ -282,26 +305,18 @@ class MiciHomeLayout(Widget):
                       3: self._cell_medium_txt,
                       4: self._cell_high_txt,
                       5: self._cell_full_txt}.get(self._net_strength, self._cell_none_txt)
-      rl.draw_texture(draw_net_txt, int(last_x),
-                      int(self._rect.y + self.rect.height - draw_net_txt.height / 2 - Y_CENTER), rl.Color(255, 255, 255, int(255 * 0.9)))
-      last_x += draw_net_txt.width + ITEM_SPACING
+      last_x = draw_alive_icon(draw_net_txt, last_x, 1.45, (166, 196, 255), alpha=int(255 * 0.9))
 
     else:
       # No network
       # Offset by difference in height between slashless and slash icons to make center align match
-      rl.draw_texture(self._wifi_slash_txt, int(last_x), int(self._rect.y + self.rect.height - self._wifi_slash_txt.height / 2 -
-                                                             (self._wifi_slash_txt.height - self._wifi_none_txt.height) / 2 - Y_CENTER),
-                      rl.Color(255, 255, 255, int(255 * 0.9)))
-      last_x += self._wifi_slash_txt.width + ITEM_SPACING
+      slash_y_offset = -(self._wifi_slash_txt.height - self._wifi_none_txt.height) / 2
+      last_x = draw_alive_icon(self._wifi_slash_txt, last_x, 1.8, (194, 146, 255), alpha=int(255 * 0.9), y_offset=slash_y_offset)
 
     # draw experimental icon
     if self._experimental_mode:
-      rl.draw_texture(self._experimental_txt, int(last_x),
-                      int(self._rect.y + self.rect.height - self._experimental_txt.height / 2 - Y_CENTER), rl.Color(255, 255, 255, 255))
-      last_x += self._experimental_txt.width + ITEM_SPACING
+      last_x = draw_alive_icon(self._experimental_txt, last_x, 2.3, (176, 146, 255), alpha=255)
 
     # draw microphone icon when recording audio is enabled
     if ui_state.recording_audio:
-      rl.draw_texture(self._mic_txt, int(last_x),
-                      int(self._rect.y + self.rect.height - self._mic_txt.height / 2 - Y_CENTER), rl.Color(255, 255, 255, 255))
-      last_x += self._mic_txt.width + ITEM_SPACING
+      last_x = draw_alive_icon(self._mic_txt, last_x, 2.8, (142, 236, 216), alpha=255)

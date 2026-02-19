@@ -13,6 +13,7 @@ class SmallSlider(Widget):
   HORIZONTAL_PADDING = 8
   CONFIRM_DELAY = 0.2
   EXPLOSION_DURATION = 0.7
+  TEXT_SHIMMER_HZ = 0.30
 
   def __init__(self, title: str, confirm_callback: Callable | None = None):
     # TODO: unify this with BigConfirmationDialogV2
@@ -142,10 +143,17 @@ class SmallSlider(Widget):
     self._knob_velocity_filter.update(knob_v)
     self._last_knob_x = self._scroll_x_circle_filter.x
 
-    stretch = min(0.16, abs(self._knob_velocity_filter.x) / 2400.0)
+    signed_stretch = max(-0.16, min(0.16, self._knob_velocity_filter.x / 2400.0))
     if self._is_dragging_circle or self._confirmed_time > 0:
-      self._circle_scale_x_filter.update(1.0 + stretch)
-      self._circle_scale_y_filter.update(1.0 - stretch * 0.70)
+      # Directional jelly: left motion => taller, right motion => wider.
+      if signed_stretch < 0.0:
+        amt = -signed_stretch
+        self._circle_scale_x_filter.update(1.0 - amt * 0.70)
+        self._circle_scale_y_filter.update(1.0 + amt)
+      else:
+        amt = signed_stretch
+        self._circle_scale_x_filter.update(1.0 + amt)
+        self._circle_scale_y_filter.update(1.0 - amt * 0.70)
     else:
       self._circle_scale_x_filter.update(1.0)
       self._circle_scale_y_filter.update(1.0)
@@ -180,7 +188,8 @@ class SmallSlider(Widget):
     self._handle_center = rl.Vector2(btn_x + self._circle_bg_txt.width / 2, btn_y + self._circle_bg_txt.height / 2)
 
     if self._confirmed_time == 0.0 or self._scroll_x_circle > 0:
-      self._label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.65 * (1.0 - self.slider_percentage) * self._opacity_filter.x)))
+      base_alpha = int(255 * 0.65 * (1.0 - self.slider_percentage) * self._opacity_filter.x)
+      self._label.set_text_color(rl.Color(255, 255, 255, base_alpha))
       label_rect = rl.Rectangle(
         self._rect.x + 20,
         self._rect.y,
@@ -188,6 +197,22 @@ class SmallSlider(Widget):
         self._rect.height,
       )
       self._label.render(label_rect)
+
+      # iOS-like glossy text shimmer sweep.
+      if base_alpha > 8 and label_rect.width > 20:
+        t = rl.get_time()
+        shimmer_w = max(52.0, label_rect.width * 0.24)
+        sweep_phase = (t * self.TEXT_SHIMMER_HZ) % 1.0
+        shimmer_x = label_rect.x - shimmer_w + (label_rect.width + shimmer_w * 2.0) * sweep_phase
+        scissor_x = int(max(label_rect.x, shimmer_x))
+        scissor_w = int(min(label_rect.x + label_rect.width, shimmer_x + shimmer_w) - scissor_x)
+        if scissor_w > 1:
+          rl.begin_scissor_mode(scissor_x, int(label_rect.y), scissor_w, int(label_rect.height))
+          peak = 0.5 + 0.5 * math.sin(t * 8.0)
+          shimmer_alpha = min(255, int(base_alpha * (1.18 + 0.30 * peak)))
+          self._label.set_text_color(rl.Color(255, 255, 255, shimmer_alpha))
+          self._label.render(label_rect)
+          rl.end_scissor_mode()
 
     # circle and arrow
     scale_x = self._circle_scale_x_filter.x

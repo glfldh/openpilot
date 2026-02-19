@@ -493,15 +493,6 @@ class MiciKeyboard(Widget):
     rl.draw_rectangle_rounded(panel, roundness, 10, rl.Color(118, 176, 255, int(255 * glass_alpha)))
     rl.draw_rectangle_gradient_v(int(panel.x), int(panel.y), int(panel.width), int(panel.height * 0.52),
                                  rl.Color(255, 255, 255, int(255 * glass_alpha * 1.5)), rl.Color(255, 255, 255, 0))
-    sweep_phase = rl.get_time() * (3.2 + 1.8 * energy)
-    sweep_x = int(panel.x + panel.width * (0.1 + 0.8 * (0.5 + 0.5 * np.sin(sweep_phase))))
-    streak_w = max(8, int(12 + 16 * energy))
-    streak_h = int(panel.height - 10)
-    streak_y = int(panel.y + (panel.height - streak_h) / 2)
-    streak_color = rl.Color(255, 255, 255, int(255 * glass_alpha * 1.8))
-    # Single-direction sweep highlight (less busy than mirrored double lines).
-    rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w * 2, streak_h,
-                                 rl.Color(255, 255, 255, 0), streak_color)
     rl.draw_rectangle_rounded_lines_ex(panel, roundness, 10, 2, rl.Color(172, 218, 255, int(255 * (0.10 + 0.26 * energy))))
 
     if self._tap_flash_pos is not None:
