@@ -478,6 +478,30 @@ class MiciHomeLayout(Widget):
             aj["vx"] += nx * impulse * dt
             aj["vy"] += ny * impulse * dt
 
+    # Magnetic links when icons come close (subtle watery cohesion).
+    for i in range(len(draw_items)):
+      ki = draw_items[i][0]
+      ai = self._icon_motion.get(ki)
+      if ai is None:
+        continue
+      for j in range(i + 1, len(draw_items)):
+        kj = draw_items[j][0]
+        aj = self._icon_motion.get(kj)
+        if aj is None:
+          continue
+        cix = ai["x"] + ai["w"] * 0.5
+        ciy = ai["y"] + ai["h"] * 0.5
+        cjx = aj["x"] + aj["w"] * 0.5
+        cjy = aj["y"] + aj["h"] * 0.5
+        dist = math.hypot(cjx - cix, cjy - ciy)
+        min_dist = (ai["w"] + aj["w"]) * 0.48
+        link_range = min_dist * 1.42
+        if dist < link_range:
+          link_t = 1.0 - max(0.0, min(1.0, (dist - min_dist) / max(1.0, link_range - min_dist)))
+          line_a = int(255 * (0.03 + 0.14 * alive) * link_t)
+          width = 1.0 + 2.0 * link_t
+          rl.draw_line_ex(rl.Vector2(cix, ciy), rl.Vector2(cjx, cjy), width, rl.Color(156, 218, 255, line_a))
+
     # Draw pass
     for key, texture, phase, glow_rgb, alpha, y_offset in draw_items:
       last_x = draw_alive_icon(texture, last_x, phase, glow_rgb, alpha=alpha, y_offset=y_offset, key=key)

@@ -24,6 +24,8 @@ ALIVE_WAVE_AMPLITUDE = 4.0
 ALIVE_WAVE_HZ = 2.2
 KEY_ENERGY_SPEED = 1600.0
 TAP_FLASH_DURATION = 0.24
+IDLE_BREATH_DELAY = 1.6
+IDLE_BREATH_RAMP = 1.0
 SELECTED_ARC_HEIGHT = 34.0
 SELECTED_ARC_SIDE = 12.0
 SELECTED_ARC_TIME = 0.16
@@ -61,6 +63,7 @@ class Key(Widget):
     self._alpha_filter = BounceFilter(1.0, 0.075 * ANIMATION_SCALE, 1 / gui_app.target_fps)
 
     self._color = rl.Color(255, 255, 255, 255)
+    self._visibility_mul = 1.0
 
     self._position_initialized = False
     self.original_position = rl.Vector2(0, 0)
@@ -96,7 +99,7 @@ class Key(Widget):
     return self._rect.x, self._rect.y
 
   def _update_state(self):
-    self._color.a = min(int(255 * self._alpha_filter.x), 255)
+    self._color.a = min(int(255 * self._alpha_filter.x * self._visibility_mul), 255)
 
   def _render(self, _):
     # center char at rect position
@@ -114,6 +117,12 @@ class Key(Widget):
 
   def _get_font_size(self) -> int:
     return int(round(self._size_filter.x))
+
+  def get_render_font_size(self) -> int:
+    return self._get_font_size()
+
+  def set_visibility_mul(self, mul: float):
+    self._visibility_mul = max(0.0, min(1.0, mul))
 
 
 class SmallKey(Key):
@@ -234,9 +243,12 @@ class MiciKeyboard(Widget):
     self._selection_ripple_t: float = rl.get_time()
     self._tap_flash_t: float = 0.0
     self._tap_flash_pos: tuple[float, float] | None = None
+    self._last_interaction_t: float = rl.get_time()
     self._selected_origin = rl.Vector2(0, 0)
     self._selected_target = rl.Vector2(0, 0)
-    self._pending_release_flyout: tuple[str, float, float, float] | None = None
+    self._pending_release_flyout: tuple[str, float, float, float, float] | None = None
+    self._launched_key: Key | None = None
+    self._launched_t: float = 0.0
 
   def get_candidate_character(self) -> str:
     # return str of character about to be added to text
@@ -265,7 +277,7 @@ class MiciKeyboard(Widget):
   def text(self) -> str:
     return self._text
 
-  def consume_release_flyout(self) -> tuple[str, float, float, float] | None:
+  def consume_release_flyout(self) -> tuple[str, float, float, float, float] | None:
     flyout = self._pending_release_flyout
     self._pending_release_flyout = None
     return flyout
@@ -279,6 +291,7 @@ class MiciKeyboard(Widget):
       self._dragging_on_keyboard = False
 
     if mouse_event.left_down and self._dragging_on_keyboard:
+      self._last_interaction_t = rl.get_time()
       if self._last_drag_pos is not None:
         dx = mouse_event.pos.x - self._last_drag_pos.x
         dy = mouse_event.pos.y - self._last_drag_pos.y
@@ -294,6 +307,7 @@ class MiciKeyboard(Widget):
       if mouse_event.pos.y <= keyboard_pos_y:
         self._closest_key = (None, float('inf'))
     elif mouse_event.left_released:
+      self._last_interaction_t = rl.get_time()
       self._last_drag_pos = None
 
     if DEBUG:
@@ -327,6 +341,7 @@ class MiciKeyboard(Widget):
         self._set_uppercase(False)
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
+    self._last_interaction_t = rl.get_time()
     if self._closest_key[0] is not None:
       self._tap_flash_pos = (self._closest_key[0].rect.x + self._closest_key[0].rect.width / 2,
                              self._closest_key[0].rect.y + self._closest_key[0].rect.height / 2)
@@ -345,10 +360,14 @@ class MiciKeyboard(Widget):
         typed_char = self._closest_key[0].char
         self._text += typed_char
         if typed_char.strip():
+          self._launched_key = self._closest_key[0]
+          self._launched_t = rl.get_time()
+          start_size = float(self._closest_key[0].get_render_font_size())
           self._pending_release_flyout = (typed_char,
                                           self._closest_key[0].original_position.x,
                                           self._closest_key[0].original_position.y,
-                                          rl.get_time())
+                                          rl.get_time(),
+                                          start_size)
 
         # Reset caps state
         if self._caps_state == CapsState.UPPER:
@@ -362,9 +381,11 @@ class MiciKeyboard(Widget):
   def backspace(self):
     if self._text:
       self._text = self._text[:-1]
+      self._last_interaction_t = rl.get_time()
 
   def space(self):
     self._text += ' '
+    self._last_interaction_t = rl.get_time()
 
   def _update_state(self):
     # update selected key filter
@@ -385,21 +406,30 @@ class MiciKeyboard(Widget):
       self._unselect_key_t = None
       self._selected_key_t = None
 
+    if self._launched_key is not None and (rl.get_time() - self._launched_t) > (KEY_RELEASE_FLYOUT_DURATION + 0.06):
+      self._launched_key = None
+
   def _lay_out_keys(self, bg_x, bg_y, keys: list[list[Key]]):
     t = rl.get_time()
     energy = min(1.0, self._pointer_speed_filter.x / KEY_ENERGY_SPEED)
+    idle_t = max(0.0, t - self._last_interaction_t - IDLE_BREATH_DELAY)
+    idle_amt = min(1.0, idle_t / IDLE_BREATH_RAMP)
     key_rect = rl.Rectangle(bg_x, bg_y, self._txt_bg.width, self._txt_bg.height)
     for row_idx, row in enumerate(keys):
       padding = KEYBOARD_ROW_PADDING[row_idx]
       step_y = (key_rect.height - 2 * KEYBOARD_COLUMN_PADDING) / (len(keys) - 1)
       for key_idx, key in enumerate(row):
+        key.set_visibility_mul(1.0)
         key_x = key_rect.x + padding + key_idx * ((key_rect.width - 2 * padding) / (len(row) - 1))
         key_y = key_rect.y + KEYBOARD_COLUMN_PADDING + row_idx * step_y
 
         if self._closest_key[0] is None:
           # Idle shimmer wave so keyboard feels alive even before touch.
           wave = np.sin(t * ALIVE_WAVE_HZ + key_x * 0.015 + row_idx * 0.7) * ALIVE_WAVE_AMPLITUDE
-          key_y += wave * (0.2 + 0.35 * energy)
+          breath_y = np.sin(t * 1.15 + row_idx * 0.95 + key_idx * 0.42) * (1.0 + 2.0 * idle_amt)
+          breath_x = np.sin(t * 0.86 + row_idx * 0.55 + key_idx * 0.37) * (0.35 + 0.85 * idle_amt)
+          key_y += wave * (0.2 + 0.35 * energy) + breath_y
+          key_x += breath_x
           key.set_alpha(1.0)
           key.set_font_size(CHAR_FONT_SIZE)
           key.set_color(rl.Color(240, 246, 255, 255))
@@ -470,6 +500,14 @@ class MiciKeyboard(Widget):
           key.set_color(rl.Color(int(225 + 24 * tint), int(238 + 14 * tint), 255, 255))
 
         # TODO: I like the push amount, so we should clip the pos inside the keyboard rect
+        if self._launched_key is key:
+          launch_p = min(1.0, max(0.0, (t - self._launched_t) / KEY_RELEASE_FLYOUT_DURATION))
+          # Hide at launch, then fade back near the end so it reappears in place.
+          if launch_p < 0.7:
+            vis_mul = 0.0
+          else:
+            vis_mul = (launch_p - 0.7) / 0.3
+          key.set_visibility_mul(vis_mul)
         key.set_parent_rect(self._rect)
         key.set_position(key_x, key_y)
 

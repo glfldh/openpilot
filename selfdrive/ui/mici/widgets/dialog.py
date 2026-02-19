@@ -170,7 +170,8 @@ class BigInputDialog(BigDialogBase):
   KEY_FLYOUT_ARC_HEIGHT = 120.0
   KEY_FLYOUT_TOP_MARGIN = 10.0
   ERROR_ANIM_DURATION = 1.15
-  CARET_SMOOTH_RC = 0.035
+  CARET_SMOOTH_RC = 0.023
+  TYPING_RIPPLE_DURATION = 0.18
   SCAN_BASE_SPEED = 1.9
   SCAN_ENERGY_SPEED = 1.1
 
@@ -202,6 +203,7 @@ class BigInputDialog(BigDialogBase):
     self._last_drag_pos: MousePos | None = None
     self._tap_flash_t: float = 0.0
     self._char_flyouts: list[dict[str, float | str]] = []
+    self._typing_ripples: list[float] = []
     self._error_mode = "wrong password" in hint.lower()
     self._error_t = rl.get_time() if self._error_mode else None
     self._error_shake = BounceFilter(0.0, 0.06, 1 / gui_app.target_fps)
@@ -309,8 +311,9 @@ class BigInputDialog(BigDialogBase):
     text = self._keyboard.text()
     flyout_event = self._keyboard.consume_release_flyout()
     if flyout_event is not None:
-      c, sx, sy, start_t = flyout_event
-      self._char_flyouts.append({"c": c, "sx": sx, "sy": sy, "t0": start_t})
+      c, sx, sy, start_t, start_size = flyout_event
+      self._char_flyouts.append({"c": c, "sx": sx, "sy": sy, "t0": start_t, "s0": start_size})
+      self._typing_ripples.append(t)
 
     candidate_char = self._keyboard.get_candidate_character()
     # Keep newly typed characters hidden until their arc flyout finishes.
@@ -345,39 +348,57 @@ class BigInputDialog(BigDialogBase):
     # draw text input
     # push text left with a gradient on left side if too long
     render_text_size = measure_text_cached(text_font, render_text, self.TEXT_INPUT_SIZE)
+    candidate_char_size = measure_text_cached(text_font, candidate_char, self.TEXT_INPUT_SIZE) if candidate_char else rl.Vector2(0.0, 0.0)
     # Advance caret as soon as arc letters start flying, not only when they land.
+    # Keep full pending width reserved immediately so caret never jumps backward
+    # when preview-char transitions into flyout state.
     pending_advance = 0.0
+    pending_glyphs: list[dict[str, float | str]] = []
+    pending_insert_x = text_x + render_text_size.x
+    pending_right_limit = text_field_rect.x + text_field_rect.width - 4
+    pending_adv_x = 0.0
     for flyout in self._char_flyouts:
       dt_flyout = t - float(flyout["t0"])
       if dt_flyout <= self.KEY_FLYOUT_DURATION:
-        p = min(1.0, max(0.0, dt_flyout / self.KEY_FLYOUT_DURATION))
-        ease = 1.0 - (1.0 - p) ** 3
-        pending_advance += measure_text_cached(text_font, str(flyout["c"]), self.TEXT_INPUT_SIZE).x * ease
+        ch = str(flyout["c"])
+        ch_w = measure_text_cached(text_font, ch, self.TEXT_INPUT_SIZE).x
+        p_fly = min(1.0, max(0.0, dt_flyout / self.KEY_FLYOUT_DURATION))
+        gx = min(pending_insert_x + pending_adv_x, pending_right_limit - ch_w)
+        pending_glyphs.append({"c": ch, "x": gx, "p": p_fly, "w": ch_w})
+        pending_adv_x += ch_w
+        pending_advance += ch_w
     display_text_width = render_text_size.x + pending_advance
-    if display_text_width > text_field_rect.width:
-      text_x -= display_text_width - text_field_rect.width
+    preview_total_width = display_text_width + candidate_char_size.x
+    if preview_total_width > text_field_rect.width:
+      text_x -= preview_total_width - text_field_rect.width
 
     rl.begin_scissor_mode(int(text_field_rect.x), int(text_field_rect.y), int(text_field_rect.width), int(text_field_rect.height))
     rl.draw_text_ex(text_font, render_text, rl.Vector2(text_x, text_field_rect.y), self.TEXT_INPUT_SIZE, 0, rl.WHITE)
 
     # draw grayed out character user is hovering over
     if candidate_char:
-      candidate_char_size = measure_text_cached(text_font, candidate_char, self.TEXT_INPUT_SIZE)
+      candidate_x = min(text_x + display_text_width, text_field_rect.x + text_field_rect.width - candidate_char_size.x)
       rl.draw_text_ex(text_font, candidate_char,
-                      rl.Vector2(min(text_x + display_text_width, text_field_rect.x + text_field_rect.width) - candidate_char_size.x, text_field_rect.y),
+                      rl.Vector2(candidate_x, text_field_rect.y),
                       self.TEXT_INPUT_SIZE, 0, rl.Color(255, 255, 255, 128))
+
+    # Keep gray placeholders where pending letters will land; white flyouts replace them over time.
+    for glyph in pending_glyphs:
+      g_alpha = int(255 * 0.45)
+      rl.draw_text_ex(text_font, str(glyph["c"]), rl.Vector2(float(glyph["x"]), text_field_rect.y),
+                      self.TEXT_INPUT_SIZE, 0, rl.Color(255, 255, 255, g_alpha))
 
     rl.end_scissor_mode()
 
     # draw gradient on left side to indicate more text
-    if display_text_width > text_field_rect.width:
+    if preview_total_width > text_field_rect.width:
       rl.draw_rectangle_gradient_h(int(text_field_rect.x), int(text_field_rect.y), 80, int(text_field_rect.height),
                                    rl.BLACK, rl.BLANK)
 
     # draw cursor
     blink_alpha = (math.sin(rl.get_time() * 6) + 1) / 2
-    if render_text or pending_advance > 0.0:
-      cursor_target_x = min(text_x + display_text_width + 3, text_field_rect.x + text_field_rect.width)
+    if render_text or pending_advance > 0.0 or candidate_char:
+      cursor_target_x = min(text_x + preview_total_width + 3, text_field_rect.x + text_field_rect.width)
     else:
       cursor_target_x = text_field_rect.x - 6
     if not self._cursor_x_initialized:
@@ -389,6 +410,19 @@ class BigInputDialog(BigDialogBase):
       cursor_color = rl.Color(255, 120, 120, int(255 * (0.4 + 0.6 * blink_alpha)))
     rl.draw_rectangle_rounded(rl.Rectangle(int(cursor_x), int(text_field_rect.y), 4, int(text_size.y)),
                               1, 4, cursor_color)
+    if len(self._typing_ripples) > 0:
+      alive_ripples: list[float] = []
+      cy = text_field_rect.y + text_size.y * 0.5
+      for t0 in self._typing_ripples:
+        dt_r = t - t0
+        if dt_r > self.TYPING_RIPPLE_DURATION:
+          continue
+        rp = dt_r / self.TYPING_RIPPLE_DURATION
+        rr = 10 + 34 * rp
+        ra = int(255 * (1.0 - rp) ** 1.35 * (0.12 + 0.18 * energy))
+        rl.draw_circle_lines(int(cursor_x), int(cy), rr, rl.Color(176, 226, 255, ra))
+        alive_ripples.append(t0)
+      self._typing_ripples = alive_ripples
 
     # draw backspace icon with nice fade
     self._backspace_img_alpha.update(255 * bool(render_text))
@@ -430,16 +464,11 @@ class BigInputDialog(BigDialogBase):
     if len(self._char_flyouts) > 0:
       alive_flyouts: list[dict[str, float | str]] = []
       font = gui_app.font(FontWeight.ROMAN)
-      insert_x = text_x + render_text_size.x
-      right_limit = text_field_rect.x + text_field_rect.width - 4
       target_centers: list[float] = []
-      adv_x = 0.0
-      for flyout in self._char_flyouts:
-        ch = str(flyout["c"])
-        ch_w = measure_text_cached(font, ch, self.TEXT_INPUT_SIZE).x
-        center_x = min(insert_x + adv_x + ch_w / 2, right_limit)
+      for glyph in pending_glyphs:
+        center_x = float(glyph["x"]) + float(glyph["w"]) / 2
         target_centers.append(center_x)
-        adv_x += ch_w
+      right_limit = text_field_rect.x + text_field_rect.width - 4
       for i, flyout in enumerate(self._char_flyouts):
         dt = t - float(flyout["t0"])
         if dt > self.KEY_FLYOUT_DURATION:
@@ -455,7 +484,9 @@ class BigInputDialog(BigDialogBase):
         max_arc = max(16.0, mid_y - (self._rect.y + self.KEY_FLYOUT_TOP_MARGIN))
         arc_h = min(self.KEY_FLYOUT_ARC_HEIGHT, max_arc)
         y = sy + (ty - sy) * ease - arc_h * 4.0 * ease * (1.0 - ease)
-        size = int(self.TEXT_INPUT_SIZE * (1.15 - 0.15 * p))
+        start_size = float(flyout.get("s0", self.TEXT_INPUT_SIZE * 1.15))
+        size = int(round(start_size + (self.TEXT_INPUT_SIZE - start_size) * ease))
+        size = max(1, size)
         ch = str(flyout["c"])
         ch_size = measure_text_cached(font, ch, size)
         rl.draw_text_ex(font, ch, rl.Vector2(x - ch_size.x / 2, y - ch_size.y / 2), size, 0,

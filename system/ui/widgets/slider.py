@@ -14,6 +14,8 @@ class SmallSlider(Widget):
   CONFIRM_DELAY = 0.2
   EXPLOSION_DURATION = 0.7
   TEXT_SHIMMER_HZ = 0.30
+  TRAIL_DURATION = 0.28
+  TRAIL_SPAWN_MIN_DT = 0.018
 
   def __init__(self, title: str, confirm_callback: Callable | None = None):
     # TODO: unify this with BigConfirmationDialogV2
@@ -41,6 +43,8 @@ class SmallSlider(Widget):
     self._circle_y_jelly_filter = BounceFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._fx_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._handle_center = rl.Vector2(0, 0)
+    self._trail_particles: list[dict[str, float]] = []
+    self._last_trail_spawn_t = 0.0
 
     self._is_dragging_circle = False
 
@@ -186,6 +190,30 @@ class SmallSlider(Widget):
     btn_y = self._rect.y + (self._rect.height - self._circle_bg_txt.height) / 2
     btn_y += self._circle_y_jelly_filter.x
     self._handle_center = rl.Vector2(btn_x + self._circle_bg_txt.width / 2, btn_y + self._circle_bg_txt.height / 2)
+
+    # Momentum trail while dragging to emphasize motion.
+    t_now = rl.get_time()
+    speed = abs(self._knob_velocity_filter.x)
+    if (self._is_dragging_circle or self._confirmed_time > 0.0) and speed > 240.0 and (t_now - self._last_trail_spawn_t) >= self.TRAIL_SPAWN_MIN_DT:
+      self._trail_particles.append({
+        "x": self._handle_center.x,
+        "y": self._handle_center.y,
+        "t0": t_now,
+        "v": min(1.0, speed / 2800.0),
+      })
+      self._last_trail_spawn_t = t_now
+
+    alive_trail: list[dict[str, float]] = []
+    for p in self._trail_particles:
+      dt = t_now - p["t0"]
+      if dt > self.TRAIL_DURATION:
+        continue
+      tf = dt / self.TRAIL_DURATION
+      radius = 7 + 22 * p["v"] * (1.0 - tf)
+      alpha = int(255 * self._opacity_filter.x * (0.18 + 0.24 * p["v"]) * (1.0 - tf) ** 1.35)
+      rl.draw_circle_gradient(int(p["x"]), int(p["y"]), radius, rl.Color(164, 224, 255, alpha), rl.Color(164, 224, 255, 0))
+      alive_trail.append(p)
+    self._trail_particles = alive_trail
 
     if self._confirmed_time == 0.0 or self._scroll_x_circle > 0:
       base_alpha = int(255 * 0.65 * (1.0 - self.slider_percentage) * self._opacity_filter.x)
