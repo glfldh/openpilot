@@ -1,7 +1,9 @@
 import atexit
 import cffi
+import math
 import os
 import queue
+import random
 import time
 import signal
 import sys
@@ -46,6 +48,7 @@ RECORD_BITRATE = os.getenv("RECORD_BITRATE", "")  # Target bitrate e.g. "2000k" 
 RECORD_SPEED = int(os.getenv("RECORD_SPEED", "1"))  # Speed multiplier
 OFFSCREEN = os.getenv("OFFSCREEN") == "1"  # Disable FPS limiting for fast offline rendering
 EDGE_VIGNETTE_STRENGTH = float(os.getenv("EDGE_VIGNETTE_STRENGTH", "1.0"))
+STORY_EVENTS_ENABLED = os.getenv("STORY_EVENTS_ENABLED", "1") == "1"
 
 GL_VERSION = """
 #version 300 es
@@ -245,6 +248,11 @@ class GuiApplication:
     self._profile_render_frames = PROFILE_RENDER
     self._render_profiler = None
     self._render_profile_start_time = None
+    self._story_event_t: float | None = None
+    self._story_event_kind: str = ""
+    self._story_particles: list[dict[str, float]] = []
+    self._story_event_origin: tuple[float, float] = (0.0, 0.0)
+    self._next_story_event_t = time.monotonic() + random.uniform(2.5, 5.5)
 
   @property
   def frame(self):
@@ -562,6 +570,7 @@ class GuiApplication:
         if self._grid_size > 0:
           self._draw_grid()
 
+        self._draw_story_events()
         self._draw_edge_vignette()
 
         rl.end_drawing()
@@ -738,6 +747,89 @@ class GuiApplication:
     while y <= self._scaled_height:
       rl.draw_line(0, y, self._scaled_width, y, grid_color)
       y += self._grid_size
+
+  def _trigger_story_event(self):
+    self._story_event_kind = random.choice(["comet", "pulse", "scan", "spark_burst"])
+    self._story_event_t = time.monotonic()
+    ox = random.uniform(self._scaled_width * 0.18, self._scaled_width * 0.82)
+    oy = random.uniform(self._scaled_height * 0.2, self._scaled_height * 0.8)
+    self._story_event_origin = (ox, oy)
+    self._story_particles.clear()
+
+    if self._story_event_kind in ("pulse", "spark_burst"):
+      count = 38 if self._story_event_kind == "spark_burst" else 22
+      base_speed = 170.0 if self._story_event_kind == "spark_burst" else 120.0
+      for i in range(count):
+        ang = (i / count) * (2 * math.pi) + random.uniform(-0.24, 0.24)
+        speed = base_speed * random.uniform(0.55, 1.45)
+        self._story_particles.append({
+          "x": ox,
+          "y": oy,
+          "vx": math.cos(ang) * speed,
+          "vy": math.sin(ang) * speed,
+          "t0": self._story_event_t,
+        })
+
+  def _draw_story_events(self):
+    if not STORY_EVENTS_ENABLED:
+      return
+
+    now = time.monotonic()
+    if now >= self._next_story_event_t:
+      self._trigger_story_event()
+      self._next_story_event_t = now + random.uniform(2.8, 6.2)
+
+    if self._story_event_t is None:
+      return
+
+    dt = now - self._story_event_t
+    duration = 1.3
+    if dt > duration:
+      self._story_event_t = None
+      self._story_event_kind = ""
+      self._story_particles.clear()
+      return
+
+    p = dt / duration
+    ox, oy = self._story_event_origin
+
+    if self._story_event_kind == "pulse":
+      radius = 40 + 220 * p
+      alpha = int(255 * (1.0 - p) ** 1.4 * 0.32)
+      rl.draw_circle_lines(int(ox), int(oy), radius, rl.Color(172, 224, 255, alpha))
+      rl.draw_circle_lines(int(ox), int(oy), radius * 0.78, rl.Color(198, 146, 255, int(alpha * 0.7)))
+    elif self._story_event_kind == "scan":
+      y = int((self._scaled_height + 120) * p) - 60
+      alpha = int(255 * 0.14 * (1.0 - abs(0.5 - p) * 1.3))
+      rl.draw_rectangle_gradient_v(0, y - 20, self._scaled_width, 40,
+                                   rl.Color(136, 208, 255, 0), rl.Color(136, 208, 255, alpha))
+      rl.draw_rectangle_gradient_v(0, y, self._scaled_width, 2,
+                                   rl.Color(176, 232, 255, alpha), rl.Color(176, 232, 255, 0))
+    elif self._story_event_kind == "comet":
+      cx = self._scaled_width * (0.08 + 0.84 * p)
+      cy = self._scaled_height * (0.25 + 0.18 * math.sin(p * 6.2))
+      alpha = int(255 * (1.0 - p) ** 1.2 * 0.44)
+      for i in range(6):
+        trail_p = i / 6
+        tx = cx - trail_p * 120
+        ta = int(alpha * (1.0 - trail_p))
+        rl.draw_circle(int(tx), int(cy + trail_p * 10), max(1, 4 - i // 2), rl.Color(166, 228, 255, ta))
+      rl.draw_circle_gradient(int(cx), int(cy), 14, rl.Color(200, 238, 255, alpha), rl.Color(200, 238, 255, 0))
+
+    if self._story_particles:
+      alive_particles: list[dict[str, float]] = []
+      for sp in self._story_particles:
+        pd = now - sp["t0"]
+        if pd > duration:
+          continue
+        pf = pd / duration
+        x = sp["x"] + sp["vx"] * pf
+        y = sp["y"] + sp["vy"] * pf - 28 * pf * (1.0 - pf)
+        alpha = int(255 * (1.0 - pf) ** 1.5 * 0.5)
+        color = rl.Color(164, 226, 255, alpha) if int(sp["vx"]) % 2 == 0 else rl.Color(194, 146, 255, alpha)
+        rl.draw_circle(int(x), int(y), max(1, int(2 + 2 * (1.0 - pf))), color)
+        alive_particles.append(sp)
+      self._story_particles = alive_particles
 
   def _draw_edge_vignette(self):
     if EDGE_VIGNETTE_STRENGTH <= 0.0:

@@ -97,7 +97,7 @@ class BigConfirmationDialogV2(BigDialogBase):
     else:
       self._slider = BigSlider(title, icon_txt, confirm_callback=self._on_confirm)
     self._slider.set_enabled(lambda: not self._swiping_away)
-    self._intro_t = rl.get_time()
+    self._dialog_intro_t = rl.get_time()
     self._outro_t: float | None = None
     self._confirm_handled = False
 
@@ -117,18 +117,25 @@ class BigConfirmationDialogV2(BigDialogBase):
 
   def _render(self, _) -> DialogResult:
     t = rl.get_time()
-    intro_p = min(1.0, max(0.0, (t - self._intro_t) / self.INTRO_DURATION))
+    intro_t = getattr(self, "_dialog_intro_t", None)
+    if intro_t is None:
+      # Defensive fallback in case a parent timer field overrides or clears intro timing.
+      intro_t = getattr(self, "_intro_t", None)
+      if intro_t is None:
+        intro_t = t
+      self._dialog_intro_t = intro_t
+    intro_p = min(1.0, max(0.0, (t - intro_t) / self.INTRO_DURATION))
     intro_ease = 1.0 - (1.0 - intro_p) ** 3
     outro_p = 0.0 if self._outro_t is None else min(1.0, max(0.0, (t - self._outro_t) / self.OUTRO_DURATION))
     outro_ease = 1.0 - (1.0 - outro_p) ** 3
 
     # Cinematic alive background for full-screen slide dialogs.
     live_energy = max(self._slider.fx_energy, self._slider.slider_percentage)
-    rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
-                      rl.Color(6, 10, 20, int(170 + 40 * intro_ease)))
-    top_alpha = int(255 * (0.06 + 0.16 * live_energy) * (1.0 - 0.35 * outro_ease))
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
-                                 rl.Color(114, 192, 255, top_alpha), rl.Color(0, 0, 0, 0))
+    backdrop_rect = rl.Rectangle(self._rect.x + 7, self._rect.y + 7, self._rect.width - 14, self._rect.height - 14)
+    rl.draw_rectangle_rounded(backdrop_rect, 0.1, 18, rl.Color(6, 10, 20, int(170 + 40 * intro_ease)))
+    top_alpha = int(255 * (0.05 + 0.13 * live_energy) * (1.0 - 0.35 * outro_ease))
+    glow_rect = rl.Rectangle(backdrop_rect.x, backdrop_rect.y, backdrop_rect.width, backdrop_rect.height * 0.75)
+    rl.draw_rectangle_rounded(glow_rect, 0.1, 18, rl.Color(114, 192, 255, top_alpha))
 
     # Dialog animate in/out transform.
     scale = (0.92 + 0.08 * intro_ease) * (1.0 - 0.06 * outro_ease)
@@ -255,8 +262,8 @@ class BigInputDialog(BigDialogBase):
     roundness = 0.24
 
     # Full dialog ambiance and liquid-glass panel.
-    rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
-                      rl.Color(8, 12, 20, int(155 + 35 * energy)))
+    backdrop_rect = rl.Rectangle(self._rect.x + 8, self._rect.y + 8, self._rect.width - 16, self._rect.height - 16)
+    rl.draw_rectangle_rounded(backdrop_rect, 0.1, 18, rl.Color(8, 12, 20, int(155 + 35 * energy)))
     rl.draw_rectangle_rounded(panel_rect, roundness, 16, rl.Color(26, 34, 50, int(215 + 20 * energy)))
     rl.draw_rectangle_gradient_v(int(panel_rect.x), int(panel_rect.y), int(panel_rect.width), int(panel_rect.height * 0.52),
                                  rl.Color(120, 180, 255, int(38 + 45 * energy)),

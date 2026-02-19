@@ -1,4 +1,5 @@
 import time
+import math
 
 from cereal import log
 import pyray as rl
@@ -9,6 +10,7 @@ from openpilot.system.ui.lib.application import gui_app, FontWeight, DEFAULT_TEX
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.text import wrap_text
 from openpilot.system.version import training_version, RELEASE_BRANCHES
+from openpilot.common.filter_simple import FirstOrderFilter
 
 HEAD_BUTTON_FONT_SIZE = 40
 HOME_PADDING = 8
@@ -89,6 +91,7 @@ class MiciHomeLayout(Widget):
 
     self._version_text = None
     self._experimental_mode = False
+    self._alive_energy_filter = FirstOrderFilter(0.12, 0.08, 1 / gui_app.target_fps)
 
     self._settings_txt = gui_app.texture("icons_mici/settings.png", 48, 48)
     self._experimental_txt = gui_app.texture("icons_mici/experimental_mode.png", 48, 48)
@@ -150,6 +153,16 @@ class MiciHomeLayout(Widget):
       self._last_refresh = rl.get_time()
       self._update_params()
 
+    # Alive energy follows interaction and current device state.
+    target_energy = 0.12
+    if self.is_pressed:
+      target_energy = 0.9
+    elif ui_state.started:
+      target_energy = 0.45
+    elif self._net_type in (NetworkType.wifi, NetworkType.cell2G, NetworkType.cell3G, NetworkType.cell4G, NetworkType.cell5G):
+      target_energy = 0.28
+    self._alive_energy_filter.update(target_energy)
+
   def _update_network_status(self, device_state):
     self._net_type = device_state.networkType
     strength = device_state.networkStrength
@@ -178,8 +191,31 @@ class MiciHomeLayout(Widget):
     return None
 
   def _render(self, _):
+    t = rl.get_time()
+    alive = self._alive_energy_filter.x
+
+    # Home hero ambiance (subtle, cinematic).
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height),
+                                 rl.Color(90, 154, 255, int(255 * (0.035 + 0.06 * alive))),
+                                 rl.Color(8, 12, 24, 0))
+    # Slow drifting color blobs.
+    blob_a = int(255 * (0.028 + 0.05 * alive))
+    bx1 = self._rect.x + self._rect.width * (0.24 + 0.10 * math.sin(t * 0.23))
+    by1 = self._rect.y + self._rect.height * (0.30 + 0.10 * math.cos(t * 0.19))
+    bx2 = self._rect.x + self._rect.width * (0.76 + 0.08 * math.cos(t * 0.21 + 0.8))
+    by2 = self._rect.y + self._rect.height * (0.66 + 0.08 * math.sin(t * 0.24 + 1.5))
+    r1 = max(60, int(min(self._rect.width, self._rect.height) * 0.14))
+    r2 = max(70, int(min(self._rect.width, self._rect.height) * 0.17))
+    rl.draw_circle_gradient(int(bx1), int(by1), float(r1), rl.Color(120, 190, 255, blob_a), rl.Color(120, 190, 255, 0))
+    rl.draw_circle_gradient(int(bx2), int(by2), float(r2), rl.Color(176, 142, 255, blob_a), rl.Color(176, 142, 255, 0))
+
     # TODO: why is there extra space here to get it to be flush?
     text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 16)
+    # Halo behind home title.
+    halo_pulse = 0.5 + 0.5 * math.sin(t * (2.6 + 2.0 * alive))
+    halo_alpha = int(255 * (0.05 + 0.12 * alive) * (0.65 + 0.35 * halo_pulse))
+    rl.draw_circle_gradient(int(text_pos.x + 140), int(text_pos.y + 60), 120 + 20 * halo_pulse,
+                            rl.Color(165, 216, 255, halo_alpha), rl.Color(165, 216, 255, 0))
     self._openpilot_label.set_position(text_pos.x, text_pos.y)
     self._openpilot_label.render()
 
@@ -218,8 +254,14 @@ class MiciHomeLayout(Widget):
     last_x = self.rect.x + HOME_PADDING
 
     # Draw settings icon in bottom left corner
-    rl.draw_texture(self._settings_txt, int(last_x), int(self._rect.y + self.rect.height - self._settings_txt.height / 2 - Y_CENTER),
-                    rl.Color(255, 255, 255, int(255 * 0.9)))
+    t = rl.get_time()
+    alive = self._alive_energy_filter.x
+    icon_glow_a = int(255 * (0.06 + 0.12 * alive))
+    icon_y = self._rect.y + self.rect.height - self._settings_txt.height / 2 - Y_CENTER
+    rl.draw_circle_gradient(int(last_x + self._settings_txt.width / 2), int(icon_y + self._settings_txt.height / 2),
+                            30 + 8 * (0.5 + 0.5 * math.sin(t * 4.0)),
+                            rl.Color(150, 210, 255, icon_glow_a), rl.Color(150, 210, 255, 0))
+    rl.draw_texture(self._settings_txt, int(last_x), int(icon_y), rl.Color(255, 255, 255, int(255 * 0.9)))
     last_x = last_x + self._settings_txt.width + ITEM_SPACING
 
     # draw network

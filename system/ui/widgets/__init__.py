@@ -199,8 +199,10 @@ DISMISS_PUSH_OFFSET = 50 + NAV_BAR_MARGIN + NAV_BAR_HEIGHT  # px extra to push d
 DISMISS_TIME_SECONDS = 2.0
 NAV_EPIC_PARTICLE_COUNT = 9
 NAV_EPIC_AURA_MAX_ALPHA = 92
-NAV_INTRO_BOUNCE_TIME = 0.9
+NAV_INTRO_BOUNCE_TIME = 0.55
 NAV_INTRO_PARTICLE_BOOST = 10
+NAV_SHOW_EXPLOSION_DURATION = 0.62
+NAV_SHOW_EXPLOSION_PARTICLES = 26
 
 
 class NavBar(Widget):
@@ -309,6 +311,7 @@ class NavWidget(Widget, abc.ABC):
     self._nav_bar_y_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
     self._fx_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._intro_t: float | None = None
+    self._show_explosion_t: float | None = None
 
     self._set_up = False
 
@@ -391,12 +394,13 @@ class NavWidget(Widget, abc.ABC):
                                                                           original_enabled))
 
     if self._trigger_animate_in:
-      self._pos_filter.x = self._rect.height + 110
-      self._pos_filter.velocity.x = -105
-      self._pos_filter.bounce = 2.2
+      self._pos_filter.x = self._rect.height + 54
+      self._pos_filter.velocity.x = -52
+      self._pos_filter.bounce = 1.16
       self._nav_bar_y_filter.x = -NAV_BAR_MARGIN - NAV_BAR_HEIGHT
       self._nav_bar_show_time = rl.get_time()
       self._intro_t = rl.get_time()
+      self._show_explosion_t = self._intro_t
       self._trigger_animate_in = False
 
     new_y = 0.0
@@ -448,10 +452,42 @@ class NavWidget(Widget, abc.ABC):
 
   def render(self, rect: rl.Rectangle | None = None) -> bool | int | None:
     ret = super().render(rect)
+    t = rl.get_time()
+
+    # Bottom launch explosion when widget shows.
+    if self._show_explosion_t is not None:
+      dt = t - self._show_explosion_t
+      if dt > NAV_SHOW_EXPLOSION_DURATION:
+        self._show_explosion_t = None
+      else:
+        p = max(0.0, min(1.0, dt / NAV_SHOW_EXPLOSION_DURATION))
+        fade = (1.0 - p)
+        origin_x = self._rect.x + self._rect.width / 2
+        origin_y = self._rect.y + self._rect.height + 2
+
+        base_alpha = int(255 * 0.24 * (fade ** 1.2))
+        rl.draw_circle_gradient(int(origin_x), int(origin_y - 4), int(52 + 135 * p),
+                                rl.Color(130, 210, 255, base_alpha),
+                                rl.Color(130, 210, 255, 0))
+        shock_alpha = int(255 * 0.33 * (fade ** 1.35))
+        rl.draw_circle_lines(int(origin_x), int(origin_y), 30 + 230 * p, rl.Color(166, 226, 255, shock_alpha))
+
+        for i in range(NAV_SHOW_EXPLOSION_PARTICLES):
+          seed = i * 0.77
+          ang = -math.pi / 2 + (i / max(1, NAV_SHOW_EXPLOSION_PARTICLES - 1) - 0.5) * 1.9 + math.sin(seed * 1.6) * 0.08
+          speed = 90 + 230 * (0.35 + 0.65 * ((math.sin(seed * 2.3) + 1.0) * 0.5))
+          px = origin_x + math.cos(ang) * speed * p
+          py = origin_y + math.sin(ang) * speed * p - 24 * p * (1.0 - p)
+          pa = int(255 * (0.12 + 0.42 * fade) * (0.6 + 0.4 * math.sin(seed * 3.1 + t * 12.0)))
+          pr = 1 + int(2.4 * (1.0 - p))
+          if i % 2 == 0:
+            pc = rl.Color(158, 224, 255, min(255, max(0, pa)))
+          else:
+            pc = rl.Color(198, 156, 255, min(255, max(0, pa)))
+          rl.draw_circle(int(px), int(py), pr, pc)
 
     if self.back_enabled:
       fx_energy = self._fx_energy_filter.x
-      t = rl.get_time()
       bar_x = self._rect.x + (self._rect.width - self._nav_bar.rect.width) / 2
       nav_bar_delayed = rl.get_time() - self._nav_bar_show_time < 0.4
       # User dragging or dismissing, nav bar follows NavWidget

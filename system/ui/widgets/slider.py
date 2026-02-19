@@ -6,12 +6,13 @@ import math
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
-from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.filter_simple import FirstOrderFilter, BounceFilter
 
 
 class SmallSlider(Widget):
   HORIZONTAL_PADDING = 8
   CONFIRM_DELAY = 0.2
+  EXPLOSION_DURATION = 0.7
 
   def __init__(self, title: str, confirm_callback: Callable | None = None):
     # TODO: unify this with BigConfirmationDialogV2
@@ -28,9 +29,15 @@ class SmallSlider(Widget):
     self._opacity_filter = FirstOrderFilter(1.0, 0.1, 1 / gui_app.target_fps)
     self._confirmed_time = 0.0
     self._confirm_callback_called = False  # we keep dialog open by default, only call once
+    self._explosion_t: float | None = None
     self._start_x_circle = 0.0
     self._scroll_x_circle = 0.0
-    self._scroll_x_circle_filter = FirstOrderFilter(0, 0.05, 1 / gui_app.target_fps)
+    self._scroll_x_circle_filter = BounceFilter(0, 0.06, 1 / gui_app.target_fps)
+    self._knob_velocity_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
+    self._last_knob_x = 0.0
+    self._circle_scale_x_filter = BounceFilter(1.0, 0.07, 1 / gui_app.target_fps)
+    self._circle_scale_y_filter = BounceFilter(1.0, 0.07, 1 / gui_app.target_fps)
+    self._circle_y_jelly_filter = BounceFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._fx_energy_filter = FirstOrderFilter(0.0, 0.08, 1 / gui_app.target_fps)
     self._handle_center = rl.Vector2(0, 0)
 
@@ -56,6 +63,7 @@ class SmallSlider(Widget):
     self._is_dragging_circle = False
     self._confirmed_time = 0.0
     self._confirm_callback_called = False
+    self._explosion_t = None
 
   def set_opacity(self, opacity: float, smooth: bool = False):
     if smooth:
@@ -98,6 +106,7 @@ class SmallSlider(Widget):
       # swiped to left
       if self._scroll_x_circle_filter.x < self._drag_threshold:
         self._confirmed_time = rl.get_time()
+        self._explosion_t = rl.get_time()
 
       self._is_dragging_circle = False
 
@@ -127,6 +136,26 @@ class SmallSlider(Widget):
       # not activated yet, keep movement 1:1
       self._scroll_x_circle_filter.x = self._scroll_x_circle
 
+    # Knob physics (jelly-like): derive velocity from knob movement.
+    dt = max(rl.get_frame_time(), 1e-4)
+    knob_v = (self._scroll_x_circle_filter.x - self._last_knob_x) / dt
+    self._knob_velocity_filter.update(knob_v)
+    self._last_knob_x = self._scroll_x_circle_filter.x
+
+    stretch = min(0.16, abs(self._knob_velocity_filter.x) / 2400.0)
+    if self._is_dragging_circle or self._confirmed_time > 0:
+      self._circle_scale_x_filter.update(1.0 + stretch)
+      self._circle_scale_y_filter.update(1.0 - stretch * 0.70)
+    else:
+      self._circle_scale_x_filter.update(1.0)
+      self._circle_scale_y_filter.update(1.0)
+
+    # Small vertical wobble from horizontal motion makes it feel "alive".
+    target_y_jelly = -max(-1.0, min(1.0, self._knob_velocity_filter.x / 2800.0)) * 6.0
+    if not self._is_dragging_circle and self._confirmed_time == 0.0:
+      target_y_jelly = 0.0
+    self._circle_y_jelly_filter.update(target_y_jelly)
+
     target_fx_energy = 0.0
     if self._is_dragging_circle:
       target_fx_energy = 0.85
@@ -147,6 +176,7 @@ class SmallSlider(Widget):
 
     btn_x = bg_txt_x + self._bg_txt.width - self._circle_bg_txt.width + self._scroll_x_circle_filter.x
     btn_y = self._rect.y + (self._rect.height - self._circle_bg_txt.height) / 2
+    btn_y += self._circle_y_jelly_filter.x
     self._handle_center = rl.Vector2(btn_x + self._circle_bg_txt.width / 2, btn_y + self._circle_bg_txt.height / 2)
 
     if self._confirmed_time == 0.0 or self._scroll_x_circle > 0:
@@ -160,7 +190,13 @@ class SmallSlider(Widget):
       self._label.render(label_rect)
 
     # circle and arrow
-    rl.draw_texture_ex(self._circle_bg_txt, rl.Vector2(btn_x, btn_y), 0.0, 1.0, white)
+    scale_x = self._circle_scale_x_filter.x
+    scale_y = self._circle_scale_y_filter.x
+    src_rec = rl.Rectangle(0, 0, self._circle_bg_txt.width, self._circle_bg_txt.height)
+    dest_rec = rl.Rectangle(btn_x + self._circle_bg_txt.width / 2, btn_y + self._circle_bg_txt.height / 2,
+                            self._circle_bg_txt.width * scale_x, self._circle_bg_txt.height * scale_y)
+    origin = rl.Vector2(dest_rec.width / 2, dest_rec.height / 2)
+    rl.draw_texture_pro(self._circle_bg_txt, src_rec, dest_rec, origin, 0.0, white)
 
     # Alive slider shine around active knob.
     if self._fx_energy_filter.x > 0.01:
@@ -172,6 +208,24 @@ class SmallSlider(Widget):
     arrow_x = btn_x + (self._circle_bg_txt.width - self._circle_arrow_txt.width) / 2
     arrow_y = btn_y + (self._circle_bg_txt.height - self._circle_arrow_txt.height) / 2
     rl.draw_texture_ex(self._circle_arrow_txt, rl.Vector2(arrow_x, arrow_y), 0.0, 1.0, white)
+
+    # Explosion burst when fully activated.
+    if self._explosion_t is not None:
+      dt = rl.get_time() - self._explosion_t
+      if dt < self.EXPLOSION_DURATION:
+        p = dt / self.EXPLOSION_DURATION
+        cx = btn_x + self._circle_bg_txt.width / 2
+        cy = btn_y + self._circle_bg_txt.height / 2
+        for i in range(30):
+          angle = (i / 30) * (2 * math.pi) + math.sin(i * 1.27) * 0.15
+          radius = (34 + (i % 7) * 5) * p
+          px = cx + math.cos(angle) * radius
+          py = cy + math.sin(angle) * radius
+          alpha = int(255 * (1 - p) ** 1.5 * self._opacity_filter.x)
+          color = rl.Color(162, 228, 255, alpha) if i % 2 == 0 else rl.Color(196, 150, 255, alpha)
+          rl.draw_circle(int(px), int(py), max(1, int(3 - 2 * p)), color)
+      else:
+        self._explosion_t = None
 
 
 class LargerSlider(SmallSlider):

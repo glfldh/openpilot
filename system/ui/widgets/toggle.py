@@ -1,4 +1,6 @@
 import pyray as rl
+import math
+import random
 from collections.abc import Callable
 from openpilot.system.ui.lib.application import MousePos
 from openpilot.system.ui.widgets import Widget
@@ -13,6 +15,8 @@ WIDTH, HEIGHT = 160, 80
 BG_HEIGHT = 60
 ANIMATION_SPEED = 6.0
 PRESS_COMMIT_DELAY = 0.14
+TOGGLE_FX_DURATION = 0.34
+TOGGLE_FX_PARTICLE_COUNT = 14
 
 
 class Toggle(Widget):
@@ -27,6 +31,9 @@ class Toggle(Widget):
     self._pending_state: bool | None = None
     self._commit_t: float | None = None
     self._pressed_visual_until_t: float = 0.0
+    self._toggle_fx_t: float | None = None
+    self._toggle_fx_on: bool = initial_state
+    self._toggle_fx_particles: list[dict[str, float]] = []
 
   def set_rect(self, rect: rl.Rectangle):
     self._rect = rl.Rectangle(rect.x, rect.y, WIDTH, HEIGHT)
@@ -50,6 +57,25 @@ class Toggle(Widget):
     self._state = state
     self._target = 1.0 if state else 0.0
 
+  def _trigger_toggle_fx(self, state: bool):
+    now = rl.get_time()
+    self._toggle_fx_t = now
+    self._toggle_fx_on = state
+    self._toggle_fx_particles.clear()
+
+    x = self._rect.x + HEIGHT / 2 + (WIDTH - HEIGHT) * (1.0 if state else 0.0)
+    y = self._rect.y + HEIGHT / 2
+    for i in range(TOGGLE_FX_PARTICLE_COUNT):
+      angle = (i / TOGGLE_FX_PARTICLE_COUNT) * 2.0 * math.pi + random.uniform(-0.22, 0.22)
+      speed = random.uniform(76.0, 160.0)
+      self._toggle_fx_particles.append({
+        "x": x,
+        "y": y,
+        "vx": math.cos(angle) * speed,
+        "vy": math.sin(angle) * speed,
+        "size": random.uniform(1.8, 3.2),
+      })
+
   def is_enabled(self):
     return self._enabled
 
@@ -65,6 +91,7 @@ class Toggle(Widget):
       if self._pending_state is not None:
         self._state = self._pending_state
         self._target = 1.0 if self._state else 0.0
+        self._trigger_toggle_fx(self._state)
         self._pending_state = None
         self._clicked = True
         if self._callback:
@@ -92,6 +119,30 @@ class Toggle(Widget):
     knob_y = self._rect.y + HEIGHT / 2
     knob_radius = HEIGHT / 2 * (0.94 if pressed_visual else 1.0)
     rl.draw_circle(int(knob_x), int(knob_y), knob_radius, knob_color)
+
+    if self._toggle_fx_t is not None:
+      dt = rl.get_time() - self._toggle_fx_t
+      if dt > TOGGLE_FX_DURATION:
+        self._toggle_fx_t = None
+        self._toggle_fx_particles.clear()
+      else:
+        p = dt / TOGGLE_FX_DURATION
+        fade = max(0.0, 1.0 - p)
+        ring_r = knob_radius * 0.62 + 34.0 * p
+        ring_a = int(255 * (fade ** 1.4) * 0.46)
+        ring_color = rl.Color(114, 232, 141, ring_a) if self._toggle_fx_on else rl.Color(148, 182, 255, ring_a)
+        rl.draw_circle_lines(int(knob_x), int(knob_y), ring_r, ring_color)
+        rl.draw_circle_lines(int(knob_x), int(knob_y), ring_r * 0.73, rl.Color(ring_color.r, ring_color.g, ring_color.b, int(ring_a * 0.65)))
+        glow_a = int(255 * (fade ** 1.5) * 0.26)
+        rl.draw_circle_gradient(int(knob_x), int(knob_y), knob_radius * (1.15 + 0.45 * p),
+                                rl.Color(ring_color.r, ring_color.g, ring_color.b, glow_a),
+                                rl.Color(ring_color.r, ring_color.g, ring_color.b, 0))
+        for part in self._toggle_fx_particles:
+          px = part["x"] + part["vx"] * p
+          py = part["y"] + part["vy"] * p - 20.0 * p * (1.0 - p)
+          pa = int(255 * (fade ** 1.8) * 0.52)
+          pc = rl.Color(ring_color.r, ring_color.g, ring_color.b, pa)
+          rl.draw_circle(int(px), int(py), max(1.0, part["size"] * (1.0 - 0.6 * p)), pc)
 
     # TODO: use click callback
     clicked = self._clicked
