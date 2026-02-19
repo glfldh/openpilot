@@ -202,7 +202,7 @@ def compile_dm_warp(cam_w, cam_h):
 
 def run_and_save_pickle():
   for cam_w, cam_h in CAMERA_CONFIGS:
-    compile_modeld_warp(cam_w, cam_h)
+    # compile_modeld_warp(cam_w, cam_h) # TODO folded in policy run, remove make update_both_images, make sure SConscript flags are correct
     compile_dm_warp(cam_w, cam_h)
 
 
