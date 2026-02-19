@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import math
 import pyray as rl
 from enum import IntEnum
 from collections.abc import Callable
@@ -204,26 +205,81 @@ class NavBar(Widget):
     self.set_rect(rl.Rectangle(0, 0, NAV_BAR_WIDTH, NAV_BAR_HEIGHT))
     self._alpha = 1.0
     self._alpha_filter = FirstOrderFilter(1.0, 0.1, 1 / gui_app.target_fps)
+    self._energy = 0.0
+    self._energy_filter = FirstOrderFilter(0.0, 0.09, 1 / gui_app.target_fps)
+    self._drag_progress = 0.0
+    self._drag_progress_filter = FirstOrderFilter(0.0, 0.07, 1 / gui_app.target_fps)
     self._fade_time = 0.0
 
   def set_alpha(self, alpha: float) -> None:
     self._alpha = alpha
     self._fade_time = rl.get_time()
 
+  def set_energy(self, energy: float) -> None:
+    self._energy = min(1.0, max(0.0, energy))
+
+  def set_drag_progress(self, progress: float) -> None:
+    self._drag_progress = min(1.0, max(0.0, progress))
+
   def show_event(self):
     super().show_event()
     self._alpha = 1.0
     self._alpha_filter.x = 1.0
+    self._energy = 0.0
+    self._energy_filter.x = 0.0
+    self._drag_progress = 0.0
+    self._drag_progress_filter.x = 0.0
     self._fade_time = rl.get_time()
 
   def _render(self, _):
     if rl.get_time() - self._fade_time > DISMISS_TIME_SECONDS:
       self._alpha = 0.0
     alpha = self._alpha_filter.update(self._alpha)
+    energy = self._energy_filter.update(self._energy)
+    drag = self._drag_progress_filter.update(self._drag_progress)
+    t = rl.get_time()
 
-    # white bar with black border
-    rl.draw_rectangle_rounded(self._rect, 1.0, 6, rl.Color(255, 255, 255, int(255 * 0.9 * alpha)))
-    rl.draw_rectangle_rounded_lines_ex(self._rect, 1.0, 6, 2, rl.Color(0, 0, 0, int(255 * 0.3 * alpha)))
+    # Alive shape response: stretches and glows more during energetic swipe motion.
+    width_scale = 1.0 + 0.16 * energy + 0.20 * drag
+    height_scale = 1.0 + 0.20 * drag
+    bar_w = self._rect.width * width_scale
+    bar_h = max(4.0, self._rect.height * height_scale)
+    bar_x = self._rect.x + (self._rect.width - bar_w) / 2
+    bar_y = self._rect.y + (self._rect.height - bar_h) / 2
+    bar_rect = rl.Rectangle(bar_x, bar_y, bar_w, bar_h)
+
+    glow_rect = rl.Rectangle(bar_rect.x - 10, bar_rect.y - 6, bar_rect.width + 20, bar_rect.height + 12)
+    glow_roundness = 1.0
+    glow_alpha = int(255 * alpha * (0.04 + 0.22 * energy + 0.24 * drag))
+    rl.draw_rectangle_rounded(glow_rect, glow_roundness, 10, rl.Color(112, 194, 255, glow_alpha))
+
+    base_color = rl.Color(245, 248, 255, int(255 * alpha * (0.80 + 0.20 * energy)))
+    rl.draw_rectangle_rounded(bar_rect, 1.0, 10, base_color)
+
+    # Gloss strip + sweep for liquid feel.
+    gloss_h = max(2, int(bar_rect.height * 0.55))
+    rl.draw_rectangle_gradient_v(int(bar_rect.x), int(bar_rect.y), int(bar_rect.width), gloss_h,
+                                 rl.Color(255, 255, 255, int(255 * alpha * (0.24 + 0.16 * energy))),
+                                 rl.Color(255, 255, 255, 0))
+
+    sweep = 0.5 + 0.5 * math.sin(t * (3.8 + 1.4 * energy))
+    streak_x = int(bar_rect.x + bar_rect.width * (0.12 + 0.76 * sweep))
+    streak_h = max(2, int(bar_rect.height - 2))
+    streak_y = int(bar_rect.y + (bar_rect.height - streak_h) / 2)
+    streak_w = max(5, int(8 + 12 * energy))
+    streak_alpha = int(255 * alpha * (0.12 + 0.26 * energy))
+    streak_color = rl.Color(255, 255, 255, streak_alpha)
+    rl.draw_rectangle_gradient_h(streak_x - streak_w, streak_y, streak_w, streak_h, rl.Color(255, 255, 255, 0), streak_color)
+    rl.draw_rectangle_gradient_h(streak_x, streak_y, streak_w, streak_h, streak_color, rl.Color(255, 255, 255, 0))
+
+    # Endpoint sparks to make the handle feel animated and "alive".
+    endpoint_alpha = int(255 * alpha * (0.06 + 0.2 * energy))
+    endpoint_r = max(1, int(1 + 2 * energy))
+    rl.draw_circle(int(bar_rect.x + 4), int(bar_rect.y + bar_rect.height / 2), endpoint_r, rl.Color(140, 220, 255, endpoint_alpha))
+    rl.draw_circle(int(bar_rect.x + bar_rect.width - 4), int(bar_rect.y + bar_rect.height / 2), endpoint_r, rl.Color(194, 156, 255, endpoint_alpha))
+
+    border_alpha = int(255 * alpha * (0.20 + 0.24 * energy))
+    rl.draw_rectangle_rounded_lines_ex(bar_rect, 1.0, 10, 2, rl.Color(38, 65, 95, border_alpha))
 
 
 class NavWidget(Widget, abc.ABC):
@@ -360,6 +416,15 @@ class NavWidget(Widget, abc.ABC):
       self._playing_dismiss_animation = False
       self._back_button_start_pos = None
       self._swiping_away = False
+
+    drag_progress = min(1.0, max(0.0, new_y / max(1.0, SWIPE_AWAY_THRESHOLD * 1.35)))
+    motion_energy = min(1.0, abs(self._pos_filter.velocity.x) / 1000.0)
+    if self._swiping_away:
+      motion_energy = max(motion_energy, 0.5)
+    if self._playing_dismiss_animation:
+      motion_energy = max(motion_energy, 0.85)
+    self._nav_bar.set_drag_progress(drag_progress)
+    self._nav_bar.set_energy(motion_energy)
 
     self.set_position(self._rect.x, new_y)
 

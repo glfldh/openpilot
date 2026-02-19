@@ -15,8 +15,30 @@ ANIMATION_SCALE = 0.6
 EDGE_SHADOW_WIDTH = 20
 
 MIN_ZOOM_ANIMATION_TIME = 0.075  # seconds
-DO_ZOOM = False
-DO_JELLO = False
+DO_ZOOM = True
+DO_JELLO = True
+JELLO_INTENSITY = 18  # drive strength from scroll speed
+
+# Carousel depth: stronger center pop with smaller edges
+CAROUSEL_SCALE_RANGE = (0.86, 1.07)   # edge -> center
+CAROUSEL_FALLOFF = 230  # px from center where effect maxes out
+CENTER_PULSE_AMPLITUDE = 0.010        # reduced pulse to avoid persistent shake
+CENTER_PULSE_HZ = 2.2                 # slightly slower pulse speed
+
+# Real jello spring model (mass-spring-damper).
+JELLO_SPRING_K = 130.0
+JELLO_DAMPING = 24.0
+JELLO_MAX_OFFSET = 34.0
+JELLO_STRETCH_MAX = 0.14
+JELLO_VEL_TO_STRETCH = 1800.0
+
+# Color/sparkle accents for a lively feel without being distracting.
+SPARKLE_COUNT = 8
+SPARKLE_BASE_ALPHA = 0.06
+SPARKLE_ENERGY_ALPHA = 0.24
+LIQUID_GLASS_BASE_ALPHA = 0.12
+LIQUID_GLASS_ENERGY_ALPHA = 0.34
+LIQUID_GLASS_SWEEP_HZ = 4.1
 
 
 class LineSeparator(Widget):
@@ -43,11 +65,14 @@ class ScrollIndicator(Widget):
     self._scroll_offset: float = 0.0
     self._content_size: float = 0.0
     self._viewport: rl.Rectangle = rl.Rectangle(0, 0, 0, 0)
+    self._is_active: bool = False
 
-  def update(self, scroll_offset: float, content_size: float, viewport: rl.Rectangle) -> None:
+  def update(self, scroll_offset: float, content_size: float, viewport: rl.Rectangle,
+             is_active: bool = False) -> None:
     self._scroll_offset = scroll_offset
     self._content_size = content_size
     self._viewport = viewport
+    self._is_active = is_active
 
   def _render(self, _):
     # scale indicator width based on content size
@@ -55,7 +80,7 @@ class ScrollIndicator(Widget):
 
     # position based on scroll ratio
     slide_range = self._viewport.width - indicator_w
-    max_scroll = self._content_size - self._viewport.width
+    max_scroll = max(1.0, self._content_size - self._viewport.width)
     scroll_ratio = -self._scroll_offset / max_scroll
     x = self._viewport.x + scroll_ratio * slide_range
     # don't bounce up when NavWidget shows
@@ -70,10 +95,19 @@ class ScrollIndicator(Widget):
     dest_left = min(dest_left, self._viewport.x + self._viewport.width - dest_w)
     dest_left = max(dest_left, self._viewport.x)
 
+    # pulse alpha/width when actively scrolling - feels alive and responsive
+    base_alpha = 0.45
+    alpha = 0.7 if self._is_active else base_alpha
+    if self._is_active:
+      wobble = 1.0 + 0.08 * np.sin(rl.get_time() * 13.0)
+      dest_w *= wobble
+      dest_left = min(dest_left, self._viewport.x + self._viewport.width - dest_w)
+      dest_left = max(dest_left, self._viewport.x)
+
     src_rec = rl.Rectangle(0, 0, self._txt_scroll_indicator.width, self._txt_scroll_indicator.height)
     dest_rec = rl.Rectangle(dest_left, y, dest_w, self._txt_scroll_indicator.height)
     rl.draw_texture_pro(self._txt_scroll_indicator, src_rec, dest_rec, rl.Vector2(0, 0), 0.0,
-                        rl.Color(255, 255, 255, int(255 * 0.45)))
+                        rl.Color(255, 255, 255, int(255 * alpha)))
 
 
 class Scroller(Widget):
@@ -95,13 +129,18 @@ class Scroller(Widget):
     self._scroll_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
     self._zoom_filter = FirstOrderFilter(1.0, 0.2, 1 / gui_app.target_fps)
     self._zoom_out_t: float = 0.0
+    self._dt = 1 / gui_app.target_fps
 
     # layout state
     self._visible_items: list[Widget] = []
     self._content_size: float = 0.0
     self._scroll_offset: float = 0.0
+    self._prev_scroll_offset: float = 0.0
+    self._scroll_velocity = FirstOrderFilter(0.0, 0.09, self._dt)
 
     self._item_pos_filter = BounceFilter(0.0, 0.05, 1 / gui_app.target_fps)
+    # Per-item physical spring state: {id(item): {"pos": float, "vel": float}}
+    self._jello_item_state: dict[int, dict[str, float]] = {}
 
     # when not pressed, snap to closest item to be center
     self._scroll_snap_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
@@ -147,13 +186,13 @@ class Scroller(Widget):
     if DO_ZOOM:
       if self._scrolling_to is not None or self.scroll_panel.state != ScrollState.STEADY:
         self._zoom_out_t = rl.get_time() + MIN_ZOOM_ANIMATION_TIME
-        self._zoom_filter.update(0.85)
+        self._zoom_filter.update(0.92)
       else:
         if self._zoom_out_t is not None:
           if rl.get_time() > self._zoom_out_t:
             self._zoom_filter.update(1.0)
           else:
-            self._zoom_filter.update(0.85)
+            self._zoom_filter.update(0.92)
 
     # Cancel auto-scroll if user starts manually scrolling
     if self._scrolling_to is not None and (self.scroll_panel.state == ScrollState.PRESSED or self.scroll_panel.state == ScrollState.MANUAL_SCROLL):
@@ -225,8 +264,13 @@ class Scroller(Widget):
     self._content_size += self._pad_start + self._pad_end
 
     self._scroll_offset = self._get_scroll(self._visible_items, self._content_size)
+    raw_scroll_velocity = (self._scroll_offset - self._prev_scroll_offset) / self._dt
+    self._scroll_velocity.update(raw_scroll_velocity)
+    self._prev_scroll_offset = self._scroll_offset
 
     self._item_pos_filter.update(self._scroll_offset)
+    visible_item_ids = {id(item) for item in self._visible_items}
+    self._jello_item_state = {k: v for k, v in self._jello_item_state.items() if k in visible_item_ids}
 
     cur_pos = 0
     for idx, item in enumerate(self._visible_items):
@@ -247,20 +291,34 @@ class Scroller(Widget):
       else:
         y += self._scroll_offset
 
-      # Add some jello effect when scrolling
+      # Real jello physics: per-item spring follows target with damping and velocity drive.
       if DO_JELLO:
+        primary_target = x if self._horizontal else y
+        item_key = id(item)
+        spring = self._jello_item_state.get(item_key)
+        if spring is None:
+          spring = {"pos": primary_target, "vel": 0.0}
+          self._jello_item_state[item_key] = spring
+
         if self._horizontal:
-          cx = self._rect.x + self._rect.width / 2
-          jello_offset = self._scroll_offset - np.interp(x + item.rect.width / 2,
-                                                         [self._rect.x, cx, self._rect.x + self._rect.width],
-                                                         [self._item_pos_filter.x, self._scroll_offset, self._item_pos_filter.x])
-          x -= np.clip(jello_offset, -20, 20)
+          center = self._rect.x + self._rect.width / 2
+          item_center = x + item.rect.width / 2
+          edge_norm = min(1.0, abs(item_center - center) / max(1.0, self._rect.width / 2))
         else:
-          cy = self._rect.y + self._rect.height / 2
-          jello_offset = self._scroll_offset - np.interp(y + item.rect.height / 2,
-                                                         [self._rect.y, cy, self._rect.y + self._rect.height],
-                                                         [self._item_pos_filter.x, self._scroll_offset, self._item_pos_filter.x])
-          y -= np.clip(jello_offset, -20, 20)
+          center = self._rect.y + self._rect.height / 2
+          item_center = y + item.rect.height / 2
+          edge_norm = min(1.0, abs(item_center - center) / max(1.0, self._rect.height / 2))
+
+        drive = np.clip(self._scroll_velocity.x / 2200.0, -1.5, 1.5) * JELLO_INTENSITY * (0.65 + 0.7 * edge_norm)
+        accel = JELLO_SPRING_K * (primary_target - spring["pos"]) - JELLO_DAMPING * spring["vel"] + drive
+        spring["vel"] += accel * self._dt
+        spring["pos"] += spring["vel"] * self._dt
+        jello_delta = np.clip(spring["pos"] - primary_target, -JELLO_MAX_OFFSET, JELLO_MAX_OFFSET)
+
+        if self._horizontal:
+          x = primary_target + jello_delta
+        else:
+          y = primary_target + jello_delta
 
       # Update item state
       item.set_position(round(x), round(y))  # round to prevent jumping when settling
@@ -275,17 +333,146 @@ class Scroller(Widget):
       if not rl.check_collision_recs(item.rect, self._rect):
         continue
 
-      # Scale each element around its own origin when scrolling
-      scale = self._zoom_filter.x
-      if scale != 1.0:
-        rl.rl_push_matrix()
-        rl.rl_scalef(scale, scale, 1.0)
-        rl.rl_translatef((1 - scale) * (item.rect.x + item.rect.width / 2) / scale,
-                         (1 - scale) * (item.rect.y + item.rect.height / 2) / scale, 0)
-        item.render()
-        rl.rl_pop_matrix()
+      # Carousel depth: scale down items toward the edges for a living, dimensional feel
+      if self._horizontal:
+        viewport_center = self._rect.x + self._rect.width / 2
+        item_center = item.rect.x + item.rect.width / 2
       else:
-        item.render()
+        viewport_center = self._rect.y + self._rect.height / 2
+        item_center = item.rect.y + item.rect.height / 2
+      dist_from_center = abs(item_center - viewport_center)
+      center_t = min(1.0, dist_from_center / CAROUSEL_FALLOFF)
+      carousel_scale = np.interp(center_t, [0, 1], [CAROUSEL_SCALE_RANGE[1], CAROUSEL_SCALE_RANGE[0]])
+      # Tiny center pulse gives an "alive" feel even at low speed.
+      center_weight = 1.0 - center_t
+      speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
+      # Keep a very light idle pulse, stronger only while moving.
+      pulse_strength = CENTER_PULSE_AMPLITUDE * (0.18 + 0.82 * speed_energy)
+      pulse = 1.0 + pulse_strength * center_weight * np.sin(rl.get_time() * (2 * np.pi * CENTER_PULSE_HZ))
+
+      # Combine with zoom filter (when DO_ZOOM enabled)
+      base_scale = self._zoom_filter.x * carousel_scale * pulse
+      scale_x = base_scale
+      scale_y = base_scale
+
+      # Stretch/squash follows spring speed (jello-like conservation of volume feel).
+      if DO_JELLO:
+        spring = self._jello_item_state.get(id(item))
+        if spring is not None:
+          stretch = min(JELLO_STRETCH_MAX, abs(spring["vel"]) / JELLO_VEL_TO_STRETCH)
+          if self._horizontal:
+            # Direction-aware deformation:
+            # moving left  -> x-axis stretch
+            # moving right -> y-axis stretch
+            if self._scroll_velocity.x < -15:
+              scale_x *= (1.0 + stretch)
+              scale_y *= (1.0 - stretch * 0.72)
+            elif self._scroll_velocity.x > 15:
+              scale_x *= (1.0 - stretch * 0.72)
+              scale_y *= (1.0 + stretch)
+          else:
+            scale_x *= (1.0 - stretch * 0.72)
+            scale_y *= (1.0 + stretch)
+
+      needs_transform = (scale_x != 1.0 or scale_y != 1.0)
+      if needs_transform:
+        cx = item.rect.x + item.rect.width / 2
+        cy = item.rect.y + item.rect.height / 2
+        rl.rl_push_matrix()
+        rl.rl_translatef(cx, cy, 0)
+        rl.rl_scalef(scale_x, scale_y, 1.0)
+        rl.rl_translatef(-cx, -cy, 0)
+      item.render()
+
+      # Liquid glass overlay: subtle tint, moving specular sweep, and edge glow.
+      if item is not self._line_separator:
+        glass_alpha = LIQUID_GLASS_BASE_ALPHA + LIQUID_GLASS_ENERGY_ALPHA * speed_energy
+
+        inset = 2
+        glass_rect = rl.Rectangle(item.rect.x + inset, item.rect.y + inset,
+                                  max(1, item.rect.width - 2 * inset), max(1, item.rect.height - 2 * inset))
+        min_dim = max(1.0, min(glass_rect.width, glass_rect.height))
+        corner_px = max(8.0, min(30.0, min_dim * 0.42))
+        roundness = min(1.0, corner_px / (min_dim / 2.0))
+
+        # Base frosted tint
+        tint = rl.Color(120, 180, 255, int(255 * glass_alpha))
+        rl.draw_rectangle_rounded(glass_rect, roundness, 10, tint)
+
+        # Inner depth tint to make glass read stronger
+        inner_inset = max(2, int(min_dim * 0.04))
+        inner_rect = rl.Rectangle(glass_rect.x + inner_inset, glass_rect.y + inner_inset,
+                                  max(1, glass_rect.width - 2 * inner_inset),
+                                  max(1, glass_rect.height - 2 * inner_inset))
+        inner_tint = rl.Color(145, 198, 255, int(255 * glass_alpha * 0.72))
+        rl.draw_rectangle_rounded(inner_rect, roundness, 10, inner_tint)
+
+        gloss_h = max(4, int(glass_rect.height * 0.44))
+        gloss_alpha = int(255 * glass_alpha * 2.2)
+        rl.draw_rectangle_gradient_v(int(glass_rect.x), int(glass_rect.y),
+                                     int(glass_rect.width), gloss_h,
+                                     rl.Color(255, 255, 255, gloss_alpha), rl.Color(255, 255, 255, 0))
+
+        # Bottom bounce light for thicker "glass slab" look
+        bounce_h = max(3, int(glass_rect.height * 0.26))
+        bounce_y = int(glass_rect.y + glass_rect.height - bounce_h)
+        rl.draw_rectangle_gradient_v(int(glass_rect.x), bounce_y, int(glass_rect.width), bounce_h,
+                                     rl.Color(170, 215, 255, 0),
+                                     rl.Color(170, 215, 255, int(255 * glass_alpha * 0.95)))
+
+        sweep_phase = rl.get_time() * LIQUID_GLASS_SWEEP_HZ + item_center * 0.017
+        sweep_x = int(glass_rect.x + glass_rect.width * (0.15 + 0.7 * (0.5 + 0.5 * np.sin(sweep_phase))))
+        streak_w = max(8, int(14 + 18 * speed_energy))
+        streak_h = max(6, int(glass_rect.height - 6))
+        streak_y = int(glass_rect.y + (glass_rect.height - streak_h) / 2)
+        streak_color = rl.Color(255, 255, 255, int(255 * glass_alpha * 2.0))
+        rl.draw_rectangle_gradient_h(sweep_x - streak_w, streak_y, streak_w, streak_h,
+                                     rl.Color(255, 255, 255, 0), streak_color)
+        rl.draw_rectangle_gradient_h(sweep_x, streak_y, streak_w, streak_h,
+                                     streak_color, rl.Color(255, 255, 255, 0))
+
+        # Chromatic edge split for stronger liquid glass character
+        edge_main = rl.Color(175, 226, 255, int(255 * (0.18 + 0.30 * speed_energy)))
+        edge_cyan = rl.Color(115, 225, 255, int(255 * (0.10 + 0.20 * speed_energy)))
+        edge_violet = rl.Color(190, 142, 255, int(255 * (0.09 + 0.18 * speed_energy)))
+        rl.draw_rectangle_rounded_lines_ex(glass_rect, roundness, 10, 2, edge_main)
+        rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(glass_rect.x - 1, glass_rect.y - 1, glass_rect.width, glass_rect.height),
+                                           roundness, 10, 1, edge_cyan)
+        rl.draw_rectangle_rounded_lines_ex(rl.Rectangle(glass_rect.x + 1, glass_rect.y + 1, glass_rect.width, glass_rect.height),
+                                           roundness, 10, 1, edge_violet)
+
+        # Tiny caustic spark along the sweep.
+        caustic_r = max(2, int(2 + 3 * speed_energy))
+        caustic_y = int(glass_rect.y + glass_rect.height * (0.32 + 0.25 * np.sin(sweep_phase * 1.37)))
+        rl.draw_circle(sweep_x, caustic_y, float(caustic_r),
+                       rl.Color(255, 255, 255, int(255 * glass_alpha * 1.5)))
+
+      if needs_transform:
+        rl.rl_pop_matrix()
+
+    # Subtle color sparkles: energy-reactive and bounded to scroller viewport.
+    speed_energy = min(1.0, abs(self._scroll_velocity.x) / 2200.0)
+    if self._horizontal and len(self._visible_items) > 0:
+      t = rl.get_time()
+      for i in range(SPARKLE_COUNT):
+        phase = t * (1.6 + 0.21 * i) + i * 1.73
+        x = self._rect.x + self._rect.width * (0.5 + 0.5 * np.sin(phase * 0.73))
+        y = self._rect.y + self._rect.height * (0.18 + 0.64 * (0.5 + 0.5 * np.sin(phase * 1.33 + 1.1)))
+        pulse = 0.4 + 0.6 * (0.5 + 0.5 * np.sin(phase * 2.1))
+
+        alpha = SPARKLE_BASE_ALPHA + SPARKLE_ENERGY_ALPHA * speed_energy
+        a = int(255 * alpha * pulse)
+        size = 1 + int(2 + 4 * speed_energy * pulse)
+
+        # Shift hue cyan -> violet per sparkle phase.
+        hue_mix = 0.5 + 0.5 * np.sin(phase * 0.9 + 0.6)
+        c1 = rl.Color(85, 220, 255, a)
+        c2 = rl.Color(176, 120, 255, a)
+        color = rl.Color(int(c1.r + (c2.r - c1.r) * hue_mix),
+                         int(c1.g + (c2.g - c1.g) * hue_mix),
+                         int(c1.b + (c2.b - c1.b) * hue_mix),
+                         a)
+        rl.draw_circle(int(x), int(y), float(size), color)
 
     rl.end_scissor_mode()
 
@@ -302,13 +489,19 @@ class Scroller(Widget):
 
     # Draw scroll indicator on top of edge shadows
     if self._show_scroll_indicator and len(self._visible_items) > 0:
-      self._scroll_indicator.update(self._scroll_offset, self._content_size, self._rect)
+      is_scrolling = (self.scroll_panel.state != ScrollState.STEADY or
+                      self._scrolling_to is not None)
+      self._scroll_indicator.update(self._scroll_offset, self._content_size, self._rect,
+                                    is_active=is_scrolling)
       self._scroll_indicator.render()
 
   def show_event(self):
     super().show_event()
     if self._reset_scroll_at_show:
       self.scroll_panel.set_offset(0.0)
+    self._prev_scroll_offset = self.scroll_panel.get_offset()
+    self._scroll_velocity.x = 0.0
+    self._jello_item_state.clear()
 
     for item in self._items:
       item.show_event()

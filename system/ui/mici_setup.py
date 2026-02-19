@@ -103,6 +103,8 @@ class SetupState(IntEnum):
 
 
 class StartPage(Widget):
+  PRESS_COMMIT_DELAY = 0.14  # seconds: allow pressed-state texture to fully register before navigation
+
   def __init__(self):
     super().__init__()
 
@@ -112,11 +114,26 @@ class StartPage(Widget):
 
     self._start_bg_txt = gui_app.texture("icons_mici/setup/green_button.png", 520, 224)
     self._start_bg_pressed_txt = gui_app.texture("icons_mici/setup/green_button_pressed.png", 520, 224)
+    self._click_commit_t: float | None = None
+    self._force_pressed_until_t: float = 0.0
+
+  def _handle_mouse_release(self, _):
+    # iOS-like commit: keep the pressed visual for a beat, then execute callback.
+    now = rl.get_time()
+    self._force_pressed_until_t = now + self.PRESS_COMMIT_DELAY
+    self._click_commit_t = now + self.PRESS_COMMIT_DELAY
+
+  def _update_state(self):
+    if self._click_commit_t is not None and rl.get_time() >= self._click_commit_t:
+      self._click_commit_t = None
+      if self._click_callback:
+        self._click_callback()
 
   def _render(self, rect: rl.Rectangle):
     draw_x = rect.x + (rect.width - self._start_bg_txt.width) / 2
     draw_y = rect.y + (rect.height - self._start_bg_txt.height) / 2
-    texture = self._start_bg_pressed_txt if self.is_pressed else self._start_bg_txt
+    pressed_visual = self.is_pressed or rl.get_time() < self._force_pressed_until_t
+    texture = self._start_bg_pressed_txt if pressed_visual else self._start_bg_txt
     rl.draw_texture(texture, int(draw_x), int(draw_y), rl.WHITE)
 
     self._title.render(rect)

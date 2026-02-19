@@ -11,7 +11,8 @@ DISABLED_OFF_COLOR = rl.Color(0x39, 0x39, 0x39, 255)
 DISABLED_KNOB_COLOR = rl.Color(0x88, 0x88, 0x88, 255)
 WIDTH, HEIGHT = 160, 80
 BG_HEIGHT = 60
-ANIMATION_SPEED = 8.0
+ANIMATION_SPEED = 6.0
+PRESS_COMMIT_DELAY = 0.14
 
 
 class Toggle(Widget):
@@ -23,6 +24,9 @@ class Toggle(Widget):
     self._progress = 1.0 if initial_state else 0.0
     self._target = self._progress
     self._clicked = False
+    self._pending_state: bool | None = None
+    self._commit_t: float | None = None
+    self._pressed_visual_until_t: float = 0.0
 
   def set_rect(self, rect: rl.Rectangle):
     self._rect = rl.Rectangle(rect.x, rect.y, WIDTH, HEIGHT)
@@ -31,11 +35,13 @@ class Toggle(Widget):
     if not self._enabled:
       return
 
-    self._clicked = True
-    self._state = not self._state
-    self._target = 1.0 if self._state else 0.0
-    if self._callback:
-      self._callback(self._state)
+    # Let pressed visual land before commit (iOS-style).
+    if self._commit_t is not None:
+      return
+    now = rl.get_time()
+    self._pressed_visual_until_t = now + PRESS_COMMIT_DELAY
+    self._pending_state = not self._state
+    self._commit_t = now + PRESS_COMMIT_DELAY
 
   def get_state(self) -> bool:
     return self._state
@@ -53,12 +59,26 @@ class Toggle(Widget):
       self._progress += delta if self._progress < self._target else -delta
       self._progress = max(0.0, min(1.0, self._progress))
 
+  def _update_state(self):
+    if self._commit_t is not None and rl.get_time() >= self._commit_t:
+      self._commit_t = None
+      if self._pending_state is not None:
+        self._state = self._pending_state
+        self._target = 1.0 if self._state else 0.0
+        self._pending_state = None
+        self._clicked = True
+        if self._callback:
+          self._callback(self._state)
+
   def _render(self, rect: rl.Rectangle):
     self.update()
+    pressed_visual = self.is_pressed or rl.get_time() < self._pressed_visual_until_t
 
     if self._enabled:
       bg_color = self._blend_color(OFF_COLOR, ON_COLOR, self._progress)
       knob_color = KNOB_COLOR
+      if pressed_visual:
+        bg_color = self._blend_color(bg_color, rl.WHITE, 0.08)
     else:
       bg_color = self._blend_color(DISABLED_OFF_COLOR, DISABLED_ON_COLOR, self._progress)
       knob_color = DISABLED_KNOB_COLOR
@@ -70,7 +90,8 @@ class Toggle(Widget):
     # Draw knob
     knob_x = self._rect.x + HEIGHT / 2 + (WIDTH - HEIGHT) * self._progress
     knob_y = self._rect.y + HEIGHT / 2
-    rl.draw_circle(int(knob_x), int(knob_y), HEIGHT / 2, knob_color)
+    knob_radius = HEIGHT / 2 * (0.94 if pressed_visual else 1.0)
+    rl.draw_circle(int(knob_x), int(knob_y), knob_radius, knob_color)
 
     # TODO: use click callback
     clicked = self._clicked
