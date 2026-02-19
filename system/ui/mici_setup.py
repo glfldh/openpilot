@@ -110,8 +110,8 @@ class StartPage(Widget):
                                font_weight=FontWeight.DISPLAY, alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
                                alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
 
-    self._start_bg_txt = gui_app.texture("icons_mici/setup/green_button.png", 520, 224)
-    self._start_bg_pressed_txt = gui_app.texture("icons_mici/setup/green_button_pressed.png", 520, 224)
+    self._start_bg_txt = gui_app.texture("icons_mici/setup/start_button.png", 500, 224, keep_aspect_ratio=False)
+    self._start_bg_pressed_txt = gui_app.texture("icons_mici/setup/start_button_pressed.png", 500, 224, keep_aspect_ratio=False)
 
   def _render(self, rect: rl.Rectangle):
     draw_x = rect.x + (rect.width - self._start_bg_txt.width) / 2
@@ -127,8 +127,8 @@ class SoftwareSelectionPage(Widget):
                use_custom_software_callback: Callable):
     super().__init__()
 
-    self._openpilot_slider = LargerSlider("slide to use\nopenpilot", use_openpilot_callback)
-    self._custom_software_slider = LargerSlider("slide to use\ncustom software", use_custom_software_callback, green=False)
+    self._openpilot_slider = LargerSlider("slide to install\nopenpilot", use_openpilot_callback)
+    self._custom_software_slider = LargerSlider("slide to install\ncustom software", use_custom_software_callback, green=False)
 
   def reset(self):
     self._openpilot_slider.reset()
