@@ -180,7 +180,7 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
 
     # only return vision output without hidden features (they stay on device in feat_q)
     # TODO make it so we don't assume hidden state is at the end
-    return img_q, big_img_q, feat_q, vision_out[:, :vision_features_slice.start], policy_out
+    return img_q, big_img_q, feat_q, vision_out[:, :vision_features_slice.start].contiguous(), policy_out
   return run_policy
 
 
@@ -327,11 +327,11 @@ class ModelState:
     vision_output, policy_output = outs[3], outs[4]
 
     # parse outputs
-    self.vision_output = vision_output.numpy().flatten() # TODO do we still need the weird numpy?
+    self.vision_output = vision_output.uop.base.buffer.numpy().flatten()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
     for k, dummy_value in self.dummy_ll_outputs.items():
       vision_outputs_dict.setdefault(k, dummy_value)
-    self.policy_output = policy_output.numpy().flatten()
+    self.policy_output = policy_output.uop.base.buffer.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
