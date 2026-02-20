@@ -219,7 +219,12 @@ def compile_policy(cam_w, cam_h):
     model.img_queues['img'], model.img_queues['big_img'] = outs[0], outs[1]
     model.features_queue = outs[2]
     Device.default.synchronize()
-    print(f"  [{i+1}/10] {(time.perf_counter()-st)*1e3:.1f} ms")
+    t_jit = time.perf_counter()
+    vision_output = outs[3].uop.base.buffer.numpy().flatten()
+    t_vis = time.perf_counter()
+    policy_output = outs[4].uop.base.buffer.numpy().flatten()
+    t_pol = time.perf_counter()
+    print(f"  [{i+1}/10] jit {(t_jit-st)*1e3:.1f} ms  vision_np {(t_vis-t_jit)*1e3:.1f} ms  policy_np {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
 
   pkl_path = policy_pkl_path(cam_w, cam_h)
   with open(pkl_path, 'wb') as f:
