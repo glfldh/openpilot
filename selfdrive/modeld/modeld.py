@@ -165,7 +165,7 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
 
     des_buf, traf = des_buf.to(Device.DEFAULT), traf.to(Device.DEFAULT)
     feat_q = feat_q[:, 1:].cat(vision_out[:, vision_features_slice].reshape(1, 1, -1), dim=1).contiguous()
-    feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1)
+    feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1) # TODO double check this, why complicated?
 
     # TODO make it so we don't copy back vision features
     policy_out = next(iter(policy_runner({
@@ -194,9 +194,9 @@ def compile_policy(cam_w, cam_h):
   for i in range(10):
     frame_np = np.random.randint(0, 255, yuv_size, dtype=np.uint8)
     big_frame_np = np.random.randint(0, 255, yuv_size, dtype=np.uint8)
-    frame = Tensor.from_blob(frame_np.ctypes.data, (yuv_size,), dtype='uint8')
-    big_frame = Tensor.from_blob(big_frame_np.ctypes.data, (yuv_size,), dtype='uint8')
-    Device.default.synchronize()
+    frame = Tensor.from_blob(frame_np.ctypes.data, (yuv_size,), dtype='uint8', device=WARP_DEVICE)
+    big_frame = Tensor.from_blob(big_frame_np.ctypes.data, (yuv_size,), dtype='uint8', device=WARP_DEVICE)
+    Device[WARP_DEVICE].synchronize()
 
     model.input_queues.enqueue({'desire_pulse': np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)})
     model.desire_np[:] = model.input_queues.get('desire_pulse')['desire_pulse']
@@ -224,18 +224,21 @@ class ModelState:
   def __init__(self):
     with open(VISION_METADATA_PATH, 'rb') as f:
       vision_metadata = pickle.load(f)
-      self.vision_input_names = list(vision_metadata['input_shapes'].keys())
+      self.vision_input_shapes =  vision_metadata['input_shapes']
+      self.vision_input_names = list(self.vision_input_shapes.keys())
       self.vision_output_slices = vision_metadata['output_slices']
+      vision_output_size = vision_metadata['output_shapes']['outputs'][1]
 
     with open(POLICY_METADATA_PATH, 'rb') as f:
       policy_metadata = pickle.load(f)
       self.policy_output_slices = policy_metadata['output_slices']
       policy_shapes = policy_metadata['input_shapes']
 
+    self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
+
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
     fb = policy_shapes['features_buffer']
 
-    self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
     self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
                        'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
     self.features_queue = Tensor.zeros(fb[0], fb[1] * self.frame_skip, fb[2]).contiguous().realize()
@@ -243,6 +246,7 @@ class ModelState:
     self._blob_cache: dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3, 3), dtype=np.float32) for k in self.img_queues}
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
+    self.vision_output = np.zeros(vision_output_size, dtype=np.float32)
 
     # desire: managed by InputQueues, shape matches policy input after downsampling
     self.input_queues = InputQueues(ModelConstants.MODEL_CONTEXT_FREQ, ModelConstants.MODEL_RUN_FREQ, ModelConstants.N_FRAMES)
