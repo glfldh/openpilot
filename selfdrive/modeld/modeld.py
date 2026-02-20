@@ -260,11 +260,12 @@ class ModelState:
     self.run_policy = None
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
-    return {k: model_outputs[np.newaxis, v] for k, v in output_slices.items()}
+    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
+    return parsed_model_outputs
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
-    # desire input is a pulse triggered on rising edge
+    # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire_pulse'][0] = 0
     new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
     self.prev_desire[:] = inputs['desire_pulse']
@@ -279,17 +280,16 @@ class ModelState:
       with open(pkl_path, 'rb') as f:
         self.run_policy = pickle.load(f)
 
-    # cache frame tensors from vipc ring buffer
     for key in bufs.keys():
       ptr = bufs[key].data.ctypes.data
       yuv_size = self.frame_buf_params[key][3]
+      # There is a ringbuffer of imgs, just cache tensors pointing to all of them
       if ptr not in self._blob_cache:
         self._blob_cache[ptr] = Tensor.from_blob(ptr, (yuv_size,), dtype='uint8')
       self.full_frames[key] = self._blob_cache[ptr]
-    for key in bufs.keys():
       self.transforms_np[key][:, :] = transforms[key][:, :]
 
-    if prepare_only:
+    if prepare_only: # moved before warp
       return None
 
     # update NPY-backed inputs — desire via InputQueues, traffic direct
