@@ -8,6 +8,9 @@ from tinygrad.helpers import Context
 from tinygrad.device import Device
 from tinygrad.engine.jit import TinyJit
 
+from openpilot.system.hardware import TICI
+WARP_DEVICE = 'QCOM' if TICI else 'CPU'
+
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
 from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
@@ -37,8 +40,8 @@ def warp_perspective_tinygrad(src_flat, M_inv, dst_shape, src_shape, stride_pad)
   w_dst, h_dst = dst_shape
   h_src, w_src = src_shape
 
-  x = Tensor.arange(w_dst).reshape(1, w_dst).expand(h_dst, w_dst).reshape(-1)
-  y = Tensor.arange(h_dst).reshape(h_dst, 1).expand(h_dst, w_dst).reshape(-1)
+  x = Tensor.arange(w_dst, device=WARP_DEVICE).reshape(1, w_dst).expand(h_dst, w_dst).reshape(-1)
+  y = Tensor.arange(h_dst, device=WARP_DEVICE).reshape(h_dst, 1).expand(h_dst, w_dst).reshape(-1)
 
   # inline 3x3 matmul as elementwise to avoid reduce op (enables fusion with gather)
   src_x = M_inv[0, 0] * x + M_inv[0, 1] * y + M_inv[0, 2]
@@ -74,7 +77,7 @@ def make_frame_prepare(cam_w, cam_h, model_w, model_h):
 
   def frame_prepare_tinygrad(input_frame, M_inv):
     # UV_SCALE @ M_inv @ UV_SCALE_INV simplifies to elementwise scaling
-    M_inv_uv = M_inv * Tensor([[1.0, 1.0, 0.5], [1.0, 1.0, 0.5], [2.0, 2.0, 1.0]])
+    M_inv_uv = M_inv * Tensor([[1.0, 1.0, 0.5], [1.0, 1.0, 0.5], [2.0, 2.0, 1.0]], device=WARP_DEVICE)
     # deinterleave NV12 UV plane (UVUV... -> separate U, V)
     uv = input_frame[uv_offset:uv_offset + uv_height * stride].reshape(uv_height, stride)
     with Context(SPLIT_REDUCEOP=0):
