@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import TICI
-os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
+WARP_DEVICE = 'QCOM' if TICI else 'CPU'
+os.environ['DEV'] = WARP_DEVICE
+
 USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
@@ -130,10 +132,10 @@ class InputQueues:
       out = {}
       for k in names:
         shape = self.shapes[k]
-        if 'img' in k:
+        if 'img' in k: # TODO codepath diverged between xx and op
           n_channels = shape[1] // (self.env_fps // self.model_fps + (self.n_frames_input - 1))
           out[k] = np.concatenate([self.q[k][:, s:s+n_channels] for s in np.linspace(0, shape[1] - n_channels, self.n_frames_input, dtype=int)], axis=1)
-        elif 'pulse' in k:
+        elif 'pulse' in k: # TODO this is the only key we use InputQueues for right now
           # any pulse within interval counts
           out[k] = self.q[k].reshape((shape[0], shape[1] * self.model_fps // self.env_fps, self.env_fps // self.model_fps, -1)).max(axis=2)
         else:
@@ -141,43 +143,36 @@ class InputQueues:
           out[k] = self.q[k][:, idxs]
       return out
 
-def _make_run_policy(vision_runner, policy_runner, camera_wh, model_wh,
-                     hs_start, hs_stop, frame_skip):
-  cam_w, cam_h = camera_wh
-  model_w, model_h = model_wh
-  frame_prepare = make_frame_prepare(cam_w, cam_h, model_w, model_h) # TODO make frame warp?
+def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
+                     vision_features_slice, frame_skip):
+  model_w, model_h = MEDMODEL_INPUT_SIZE
+  frame_warp = make_frame_prepare(cam_w, cam_h, model_w, model_h)
+
+  def update_bufs(frame, img_q, tfm):
+    new = frame_warp(frame, tfm).to(Device.DEFAULT)
+    new_img_q = img_q[6:].cat(new, dim=0).contiguous() # TODO do we need contiguous? why
+    img_pair = Tensor.cat(img_q[:6], img_q[-6:], dim=0).reshape(1, 12, model_h//2, model_w//2).contiguous()
+    return new_img_q, img_pair
+
   def run_policy(img_q, big_img_q, frame, big_frame, tfm, big_tfm,
                  feat_q, des_buf, traf):
-    # NPY inputs -> device
-    tfm, big_tfm = tfm.to(Device.DEFAULT), big_tfm.to(Device.DEFAULT)
-    # TODO how big are those, should they be kept on device?
-    # TODO traf is a constant?
+    tfm, big_tfm = tfm.to(WARP_DEVICE), big_tfm.to(WARP_DEVICE)
+
+    # warp + copy in + enqueue + sample queue
+    img, big_img = update_bufs(frame, img_q, tfm), update_bufs(big_frame, big_img_q, big_tfm)
+
+    vision_out = next(iter(vision_runner({'img': img, 'big_img': big_img}).values())).cast('float32')
+
     des_buf, traf = des_buf.to(Device.DEFAULT), traf.to(Device.DEFAULT)
-
-    # warp + shift img queues (6 channels per frame, N_FRAMES=2 -> 12ch pair)
-    # TODO dedupe
-    new = frame_prepare(frame, tfm)
-    img_q = img_q[6:].cat(new, dim=0).contiguous() # TODO do we need contiguous? why
-    img = Tensor.cat(img_q[:6], img_q[-6:], dim=0).reshape(1, 12, model_h//2, model_w//2).contiguous()
-
-    new = frame_prepare(big_frame, big_tfm)
-    big_img_q = big_img_q[6:].cat(new, dim=0).contiguous()
-    big_img = Tensor.cat(big_img_q[:6], big_img_q[-6:], dim=0).reshape(1, 12, model_h//2, model_w//2).contiguous()
-
-    # vision forward
-    vis = next(iter(vision_runner({'img': img, 'big_img': big_img}).values())).cast('float32')
-
-    # shift feature queue — hidden_state stays on device, never goes to CPU
-    # TODO make it so we don't copy back vision features
-    feat_q = feat_q[:, 1:].cat(vis[:, hs_start:hs_stop].reshape(1, 1, -1), dim=1).contiguous()
+    feat_q = feat_q[:, 1:].cat(vision_out[:, vision_features_slice].reshape(1, 1, -1), dim=1).contiguous()
     feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1)
 
-    # policy forward — des_buf and traf come pre-processed from InputQueues on CPU
-    pol = next(iter(policy_runner({
+    # TODO make it so we don't copy back vision features
+    policy_out = next(iter(policy_runner({
       'features_buffer': feat_buf, 'desire_pulse': des_buf, 'traffic_convention': traf,
     }).values())).cast('float32')
 
-    return img_q, big_img_q, feat_q, vis, pol
+    return img_q, big_img_q, feat_q, vision_out, policy_out
   return run_policy
 
 
@@ -190,11 +185,8 @@ def compile_policy(cam_w, cam_h):
   policy_runner = OnnxRunner(MODELS_DIR / f'{prefix}driving_policy.onnx')
 
   model = ModelState()
-  hs = model.vision_output_slices['hidden_state']
-  frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
-
-  _run = _make_run_policy(vision_runner, policy_runner, (cam_w, cam_h),
-                          MEDMODEL_INPUT_SIZE, hs.start, hs.stop, frame_skip)
+  _run = _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
+                          model.vision_output_slices['hidden_state'], model.frame_skip)
   run_policy = TinyJit(_run, prune=True)
 
   _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
@@ -240,13 +232,13 @@ class ModelState:
       self.policy_output_slices = policy_metadata['output_slices']
       policy_shapes = policy_metadata['input_shapes']
 
-    freq = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
+    self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
     fb = policy_shapes['features_buffer']
 
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
     self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
                        'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
-    self.features_queue = Tensor.zeros(fb[0], fb[1] * freq, fb[2]).contiguous().realize()
+    self.features_queue = Tensor.zeros(fb[0], fb[1] * self.frame_skip, fb[2]).contiguous().realize()
     self.full_frames: dict[str, Tensor] = {}
     self._blob_cache: dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3, 3), dtype=np.float32) for k in self.img_queues}
@@ -476,7 +468,7 @@ def main(demo=False):
     model_output = model.run(bufs, transforms, inputs, prepare_only)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
-    print(f"Model execution time: {model_execution_time:.6f} seconds")
+    print(f"Model execution time: {model_execution_time*1e3:.2f} ms")
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')
@@ -504,7 +496,6 @@ def main(demo=False):
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
     last_vipc_frame_id = meta_main.frame_id
-
 
 
 if __name__ == "__main__":
