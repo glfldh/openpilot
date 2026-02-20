@@ -8,6 +8,11 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+  os.environ['AMD_LLVM'] = '1'
+  # perf
+  os.environ['JIT_BATCH_SIZE'] = '0'
+  os.environ['GRAPH_ONE_KERNEL'] = '1'
+  os.environ['AMD_SDMA_BIND'] = '1'
 MODEL_PREFIX = 'big_' if USBGPU else ''
 from tinygrad.tensor import Tensor
 from tinygrad import TinyJit, Device
