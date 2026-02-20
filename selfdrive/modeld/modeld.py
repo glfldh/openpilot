@@ -224,7 +224,7 @@ def compile_policy(cam_w, cam_h):
     t_vis = time.perf_counter()
     policy_output = outs[4].uop.base.buffer.numpy().flatten()
     t_pol = time.perf_counter()
-    print(f"  [{i+1}/10] jit {(t_jit-st)*1e3:.1f} ms  vision_np {(t_vis-t_jit)*1e3:.1f} ms  policy_np {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
+    print(f"  [{i+1}/10] jit {(t_jit-st)*1e3:.1f} ms  vision copy out {(t_vis-t_jit)*1e3:.1f} ms  policy copy out {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
 
   pkl_path = policy_pkl_path(cam_w, cam_h)
   with open(pkl_path, 'wb') as f:
