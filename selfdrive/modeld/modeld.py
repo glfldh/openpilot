@@ -160,7 +160,8 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
     tfm, big_tfm = tfm.to(WARP_DEVICE), big_tfm.to(WARP_DEVICE)
 
     # warp + copy in + enqueue + sample queue
-    img, big_img = update_bufs(frame, img_q, tfm), update_bufs(big_frame, big_img_q, big_tfm)
+    img_q, img = update_bufs(frame, img_q, tfm)
+    big_img_q, big_img = update_bufs(big_frame, big_img_q, big_tfm)
 
     vision_out = next(iter(vision_runner({'img': img, 'big_img': big_img}).values())).cast('float32')
 
