@@ -254,14 +254,14 @@ class ModelState:
 
     self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
                        'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
-    self.full_frames: dict[str, Tensor] = {}
-    self._blob_cache: dict[int, Tensor] = {}
-    self.transforms_np = {k: np.zeros((3, 3), dtype=np.float32) for k in self.img_queues}
+    self.full_frames : dict[str, Tensor] = {}
+    self._blob_cache : dict[int, Tensor] = {}
+    self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
     self.vision_output = np.zeros(vision_output_size, dtype=np.float32) # TODO why do we init this?
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
-    self.frame_buf_params: dict[str, tuple[int, int, int, int]] = {}
+    self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
     self.run_policy = None
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
