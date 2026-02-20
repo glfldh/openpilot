@@ -300,7 +300,10 @@ class ModelState:
         self.frame_buf_params[key] = get_nv12_info(cam_w, cam_h)
       pkl_path = policy_pkl_path(cam_w, cam_h) # assumes both cams have same resolution
       with open(pkl_path, 'rb') as f:
+        cloudlog.warning("loading combined policy jit")
+        st = time.perf_counter()
         self.run_policy = pickle.load(f)
+        cloudlog.warning(f"combined policy jit loaded from {pkl_path} in {time.perf_counter() - st:.1f}s")
 
     for key in bufs.keys():
       ptr = bufs[key].data.ctypes.data
