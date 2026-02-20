@@ -18,7 +18,7 @@ from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
 MODELS_DIR = Path(__file__).parent / 'models'
 
 CAMERA_CONFIGS = [
-  (_ar_ox_fisheye.width, _ar_ox_fisheye.height),  # tici: 1928x1208
+  # (_ar_ox_fisheye.width, _ar_ox_fisheye.height),  # tici: 1928x1208
   (_os_fisheye.width, _os_fisheye.height),        # mici: 1344x760
 ]
 
