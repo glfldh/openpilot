@@ -268,7 +268,7 @@ class ModelState:
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
     self.vision_output = np.zeros(vision_output_size, dtype=np.float32) # TODO why do we init this?
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
-    self.parser = Parser(ignore_mission=True)
+    self.parser = Parser(ignore_missing=True)
     self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
     self.run_policy = None
     self.dummy_ll_outputs = {
