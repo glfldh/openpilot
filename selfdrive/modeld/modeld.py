@@ -174,12 +174,13 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
     feat_q = feat_q[:, 1:].cat(vision_out[:, vision_features_slice].reshape(1, 1, -1), dim=1).contiguous()
     feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1) # TODO double check this, why complicated?
 
-    # TODO make it so we don't copy back vision features
     policy_out = next(iter(policy_runner({
       'features_buffer': feat_buf, 'desire_pulse': des_buf, 'traffic_convention': traf,
     }).values())).cast('float32')
 
-    return img_q, big_img_q, feat_q, vision_out, policy_out
+    # only return vision output without hidden features (they stay on device in feat_q)
+    # TODO make it so we don't assume hidden state is at the end
+    return img_q, big_img_q, feat_q, vision_out[:, :vision_features_slice.start], policy_out
   return run_policy
 
 
@@ -192,7 +193,7 @@ def compile_policy(cam_w, cam_h):
 
   model = ModelState()
   _run = _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
-                          model.vision_output_slices['hidden_state'], model.frame_skip)
+                          model.vision_features_slice, model.frame_skip)
   run_policy = TinyJit(_run, prune=True)
 
   _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
@@ -233,7 +234,8 @@ class ModelState:
       self.vision_input_shapes =  vision_metadata['input_shapes']
       self.vision_input_names = list(self.vision_input_shapes.keys())
       self.vision_output_slices = vision_metadata['output_slices']
-      vision_output_size = vision_metadata['output_shapes']['outputs'][1]
+      self.vision_features_slice = self.vision_output_slices.pop('hidden_state')
+      vision_output_size = self.vision_features_slice.start
 
     with open(POLICY_METADATA_PATH, 'rb') as f:
       policy_metadata = pickle.load(f)
