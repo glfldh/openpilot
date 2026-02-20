@@ -181,7 +181,7 @@ def compile_policy(cam_w, cam_h):
   from tinygrad.nn.onnx import OnnxRunner
   print(f"Compiling combined policy JIT for {cam_w}x{cam_h}...")
 
-  vision_runner = OnnxRunner(MODELS_DIR / f'{MODEL_PREFIX}MODEL_PREFIX.onnx')
+  vision_runner = OnnxRunner(MODELS_DIR / f'{MODEL_PREFIX}driving_vision.onnx')
   policy_runner = OnnxRunner(MODELS_DIR / f'{MODEL_PREFIX}driving_policy.onnx')
 
   model = ModelState()
