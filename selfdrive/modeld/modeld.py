@@ -8,6 +8,7 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+MODEL_PREFIX = 'big_' if USBGPU else ''
 from tinygrad.tensor import Tensor
 from tinygrad import TinyJit, Device
 import time
@@ -43,7 +44,7 @@ POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.p
 MODELS_DIR = Path(__file__).parent / 'models'
 
 def policy_pkl_path(w, h):
-  return MODELS_DIR / f'policy_{w}x{h}_tinygrad.pkl'
+  return MODELS_DIR / f'{MODEL_PREFIX}policy_{w}x{h}_tinygrad.pkl'
 
 LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
@@ -180,9 +181,8 @@ def compile_policy(cam_w, cam_h):
   from tinygrad.nn.onnx import OnnxRunner
   print(f"Compiling combined policy JIT for {cam_w}x{cam_h}...")
 
-  prefix = 'big_' if USBGPU else ''
-  vision_runner = OnnxRunner(MODELS_DIR / f'{prefix}driving_vision.onnx')
-  policy_runner = OnnxRunner(MODELS_DIR / f'{prefix}driving_policy.onnx')
+  vision_runner = OnnxRunner(MODELS_DIR / f'{MODEL_PREFIX}MODEL_PREFIX.onnx')
+  policy_runner = OnnxRunner(MODELS_DIR / f'{MODEL_PREFIX}driving_policy.onnx')
 
   model = ModelState()
   _run = _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
@@ -231,34 +231,35 @@ class ModelState:
 
     with open(POLICY_METADATA_PATH, 'rb') as f:
       policy_metadata = pickle.load(f)
+      self.policy_input_shapes =  policy_metadata['input_shapes']
       self.policy_output_slices = policy_metadata['output_slices']
-      policy_shapes = policy_metadata['input_shapes']
+      policy_output_size = policy_metadata['output_shapes']['outputs'][1]
 
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
 
+    # desire: managed by InputQueues, shape matches policy input after downsampling
+    self.input_queues = InputQueues(ModelConstants.MODEL_CONTEXT_FREQ, ModelConstants.MODEL_RUN_FREQ, ModelConstants.N_FRAMES)
+    self.input_queues.update_dtypes_and_shapes({'desire_pulse': np.float32}, {'desire_pulse': self.policy_input_shapes['desire_pulse']})
+    self.input_queues.reset()
+    self.desire_np = np.zeros(self.policy_input_shapes['desire_pulse'], dtype=np.float32)
+    self.desire_tensor = Tensor(self.desire_np, device='NPY').realize()
+
+    # traffic convention: direct pass-through, no queue
+    self.traffic_np = np.zeros(self.policy_input_shapes['traffic_convention'], dtype=np.float32)
+    self.traffic_tensor = Tensor(self.traffic_np, device='NPY').realize() # TODO they stay synced?
+
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
-    fb = policy_shapes['features_buffer']
+    fb = self.policy_input_shapes['features_buffer']
+    self.features_queue = Tensor.zeros(fb[0], fb[1] * self.frame_skip, fb[2]).contiguous().realize()
 
     self.img_queues = {'img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize(),
                        'big_img': Tensor.zeros(IMG_QUEUE_SHAPE, dtype='uint8').contiguous().realize()}
-    self.features_queue = Tensor.zeros(fb[0], fb[1] * self.frame_skip, fb[2]).contiguous().realize()
     self.full_frames: dict[str, Tensor] = {}
     self._blob_cache: dict[int, Tensor] = {}
     self.transforms_np = {k: np.zeros((3, 3), dtype=np.float32) for k in self.img_queues}
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
-    self.vision_output = np.zeros(vision_output_size, dtype=np.float32)
-
-    # desire: managed by InputQueues, shape matches policy input after downsampling
-    self.input_queues = InputQueues(ModelConstants.MODEL_CONTEXT_FREQ, ModelConstants.MODEL_RUN_FREQ, ModelConstants.N_FRAMES)
-    self.input_queues.update_dtypes_and_shapes({'desire_pulse': np.float32}, {'desire_pulse': policy_shapes['desire_pulse']})
-    self.input_queues.reset()
-    self.desire_np = np.zeros(policy_shapes['desire_pulse'], dtype=np.float32)
-    self.desire_tensor = Tensor(self.desire_np, device='NPY').realize()
-
-    # traffic convention: direct pass-through, no queue
-    self.traffic_np = np.zeros(policy_shapes['traffic_convention'], dtype=np.float32)
-    self.traffic_tensor = Tensor(self.traffic_np, device='NPY').realize() # TODO they stay synced?
-
+    self.vision_output = np.zeros(vision_output_size, dtype=np.float32) # TODO why do we init this?
+    self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
     self.frame_buf_params: dict[str, tuple[int, int, int, int]] = {}
     self.run_policy = None
@@ -273,14 +274,11 @@ class ModelState:
     inputs['desire_pulse'][0] = 0
     new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
     self.prev_desire[:] = inputs['desire_pulse']
-
-    # lazy init on first frame — load JIT pickle matching camera resolution
     if self.run_policy is None:
       for key in bufs.keys():
         cam_w, cam_h = bufs[key].width, bufs[key].height
         self.frame_buf_params[key] = get_nv12_info(cam_w, cam_h)
-      cam_w, cam_h = next(iter(bufs.values())).width, next(iter(bufs.values())).height # TODO why did this change?
-      pkl_path = policy_pkl_path(cam_w, cam_h)
+      pkl_path = policy_pkl_path(cam_w, cam_h) # assumes both cams have same resolution
       with open(pkl_path, 'rb') as f:
         self.run_policy = pickle.load(f)
 
@@ -314,13 +312,13 @@ class ModelState:
     vision_output, policy_output = outs[3], outs[4]
 
     # parse outputs
-    vision_np = vision_output.numpy().flatten() # TODO do we still need the weird numpy?
-    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(vision_np, self.vision_output_slices))
-    policy_np = policy_output.numpy().flatten()
-    policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(policy_np, self.policy_output_slices))
+    self.vision_output = vision_output.numpy().flatten() # TODO do we still need the weird numpy?
+    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+    self.policy_output = policy_output.numpy().flatten()
+    policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
-      combined_outputs_dict['raw_pred'] = np.concatenate([vision_np.copy(), policy_np.copy()])
+      combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
     return combined_outputs_dict
 
