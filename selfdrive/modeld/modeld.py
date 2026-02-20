@@ -268,9 +268,16 @@ class ModelState:
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
     self.vision_output = np.zeros(vision_output_size, dtype=np.float32) # TODO why do we init this?
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
-    self.parser = Parser()
+    self.parser = Parser(ignore_mission=True)
     self.frame_buf_params : dict[str, tuple[int, int, int, int]] = {}
     self.run_policy = None
+    self.dummy_ll_outputs = {
+      'lane_lines': np.zeros((1, ModelConstants.NUM_LANE_LINES, ModelConstants.IDX_N, ModelConstants.LANE_LINES_WIDTH), dtype=np.float32),
+      'lane_lines_stds': np.zeros((1, ModelConstants.NUM_LANE_LINES, ModelConstants.IDX_N, ModelConstants.LANE_LINES_WIDTH), dtype=np.float32),
+      'lane_lines_prob': np.zeros((1, 8), dtype=np.float32),
+      'road_edges': np.zeros((1, ModelConstants.NUM_ROAD_EDGES, ModelConstants.IDX_N, ModelConstants.LANE_LINES_WIDTH), dtype=np.float32),
+      'road_edges_stds': np.zeros((1, ModelConstants.NUM_ROAD_EDGES, ModelConstants.IDX_N, ModelConstants.LANE_LINES_WIDTH), dtype=np.float32),
+    }
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
@@ -322,6 +329,8 @@ class ModelState:
     # parse outputs
     self.vision_output = vision_output.numpy().flatten() # TODO do we still need the weird numpy?
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+    for k, dummy_value in self.dummy_ll_outputs.items():
+      vision_outputs_dict.setdefault(k, dummy_value)
     self.policy_output = policy_output.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
