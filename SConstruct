@@ -85,7 +85,7 @@ env = Environment(
     "#common",
     "#third_party",
     "#selfdrive/pandad",
-    rednose.HELPERS_PATH,
+    "#build/rednose",
     f"#third_party/libyuv/{arch}/lib",
     f"#third_party/acados/{arch}/lib",
   ],
@@ -193,15 +193,13 @@ env_swaglog['CXXFLAGS'].append('-DSWAGLOG="\\"common/swaglog.h\\""')
 msgq_dir = _msgq.BASEDIR
 vipc_dir = os.path.join(msgq_dir, 'visionipc')
 
-msgq_sources = [os.path.join(msgq_dir, f) for f in
-                ['ipc.cc', 'event.cc', 'impl_msgq.cc', 'impl_fake.cc', 'msgq.cc']]
-msgq_objects = env_swaglog.SharedObject(msgq_sources)
+msgq_cc = ['ipc.cc', 'event.cc', 'impl_msgq.cc', 'impl_fake.cc', 'msgq.cc']
+msgq_objects = [env_swaglog.SharedObject(f'#build/msgq/{f.replace(".cc", ".os")}', os.path.join(msgq_dir, f)) for f in msgq_cc]
 msgq_lib = env.Library('msgq', msgq_objects)
 
 vipc_files = ['visionipc.cc', 'visionipc_server.cc', 'visionipc_client.cc']
 vipc_files += ['visionbuf_ion.cc'] if arch == "larch64" else ['visionbuf.cc']
-vipc_sources = [os.path.join(vipc_dir, f) for f in vipc_files]
-vipc_objects = env.SharedObject(vipc_sources)
+vipc_objects = [env.SharedObject(f'#build/visionipc/{f.replace(".cc", ".os")}', os.path.join(vipc_dir, f)) for f in vipc_files]
 visionipc = env.Library('visionipc', vipc_objects)
 Export('visionipc', 'msgq_lib')
 
@@ -216,9 +214,9 @@ Export('messaging')
 # Note: Cython extension (ekf_sym_pyx.so) is built by pip install
 Import('_common')
 rednose_helpers = rednose.HELPERS_PATH
-rednose_cc = [os.path.join(rednose_helpers, f) for f in ['ekf_load.cc', 'ekf_sym.cc']]
-ekf_objects = env.SharedObject(rednose_cc)
-rednose_lib = env.Library(os.path.join(rednose_helpers, 'ekf_sym'), ekf_objects, LIBS=['dl', _common, 'zmq'])
+rednose_cc_files = ['ekf_load.cc', 'ekf_sym.cc']
+ekf_objects = [env.SharedObject(f'#build/rednose/{f.replace(".cc", ".os")}', os.path.join(rednose_helpers, f)) for f in rednose_cc_files]
+rednose_lib = env.Library('#build/rednose/ekf_sym', ekf_objects, LIBS=['dl', _common, 'zmq'])
 Export('rednose_lib')
 
 # Build opendbc libsafety for tests
@@ -233,7 +231,8 @@ if GetOption('extras') and os.path.exists(os.path.join(safety_dir, 'safety.c')):
     CPPPATH=[os.path.dirname(opendbc.__file__) + "/.."],
     tools=["default"],
   )
-  safety = safety_env.SharedObject(os.path.join(safety_dir, "safety.os"), os.path.join(safety_dir, "safety.c"))
+  safety = safety_env.SharedObject('#build/opendbc/safety.os', os.path.join(safety_dir, "safety.c"))
+  # libsafety.so must be in opendbc's package dir (loaded via cffi dlopen from __file__'s dir)
   safety_env.SharedLibrary(os.path.join(safety_dir, "libsafety.so"), [safety])
 
 # Build system services
