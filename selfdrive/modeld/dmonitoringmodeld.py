@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import TICI
-os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
+DEV = 'QCOM' if TICI else 'CPU'
+os.environ['DEV'] = DEV
 from tinygrad.tensor import Tensor
 import time
 import pickle
@@ -60,7 +61,7 @@ class ModelState:
     ptr = buf.data.ctypes.data
     # There is a ringbuffer of imgs, just cache tensors pointing to all of them
     if ptr not in self._blob_cache:
-      self._blob_cache[ptr] = Tensor.from_blob(ptr, (self.frame_buf_params[3],), dtype='uint8')
+      self._blob_cache[ptr] = Tensor.from_blob(ptr, (self.frame_buf_params[3],), dtype='uint8', device=DEV) # TODO DEV is global, modeld sets it to AMD
 
     self.warp_inputs_np['transform'][:] = transform[:]
     self.tensor_inputs['input_img'] = self.image_warp(self._blob_cache[ptr], self.warp_inputs['transform']).realize()
