@@ -31,6 +31,8 @@ on_device() {
   pkill -f "focusing_$n"
 }
 
+rm -f "/tmp/restart_cameras"
+
 declare -A connected=()
 
 while true; do
@@ -56,6 +58,20 @@ while true; do
       on_device "$serial" &
     fi
   done
+
+  if [ -e "/tmp/restart_cameras" ]; then
+    rm -f "/tmp/restart_cameras"
+    echo "KILLING ADB SHELLS"
+    for serial in "${!now[@]}"; do
+      pkill -9 -f "adb -s $serial shell su - comma -c \"source /etc/profile && /data/camera.sh\""
+    done
+    sleep 0.1
+
+    echo "RESTARTING CAMERAS"
+    for serial in "${!now[@]}"; do
+      on_device "$serial" &
+    done
+  fi
 
   sleep 0.1
 done
