@@ -747,7 +747,7 @@ wheels = [
 [[package]]
 name = "opendbc"
 version = "0.2.1"
-source = { git = "https://github.com/commaai/opendbc.git?rev=fix_packages#83ce975ebcd7e9b17fce374838ec5d7184a79a47" }
+source = { git = "https://github.com/commaai/opendbc.git?rev=fix_packages#66aff6a1f7a5cf3efbcd8a52d9ade3813c8b6486" }
 dependencies = [
     { name = "crcmod-plus" },
     { name = "numpy" },
