@@ -172,7 +172,8 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
 
     des_buf, traf = des_buf.to(Device.DEFAULT), traf.to(Device.DEFAULT)
     feat_q = feat_q[:, 1:].cat(vision_out[:, vision_features_slice].reshape(1, 1, -1), dim=1).contiguous()
-    feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1) # TODO double check this, why complicated?
+    # feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1) # TODO double check this, why complicated?
+    feat_buf = feat_q[:, frame_skip - 1::frame_skip]
 
     policy_out = next(iter(policy_runner({
       'features_buffer': feat_buf, 'desire_pulse': des_buf, 'traffic_convention': traf,
@@ -194,7 +195,7 @@ def compile_policy(cam_w, cam_h):
   model = ModelState()
   _run = _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
                           model.vision_features_slice, model.frame_skip)
-  run_policy = TinyJit(_run, prune=True)
+  run_policy = TinyJit(_run, prune=True, optimize=True)
 
   _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
 
@@ -216,6 +217,7 @@ def compile_policy(cam_w, cam_h):
       model.features_queue,
       model.desire_tensor, model.traffic_tensor,
     )
+    t_enqueue = time.perf_counter()
     model.img_queues['img'], model.img_queues['big_img'] = outs[0], outs[1]
     model.features_queue = outs[2]
     Device.default.synchronize()
@@ -224,7 +226,7 @@ def compile_policy(cam_w, cam_h):
     t_vis = time.perf_counter()
     policy_output = outs[4].uop.base.buffer.numpy().flatten()
     t_pol = time.perf_counter()
-    print(f"  [{i+1}/10] jit {(t_jit-st)*1e3:.1f} ms  vision copy out {(t_vis-t_jit)*1e3:.1f} ms  policy copy out {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
+    print(f"  [{i+1}/10] jit {(t_jit-st)*1e3:.1f} ms  enqueue {(t_enqueue-st)*1e3:.1f} ms  vision copy out {(t_vis-t_jit)*1e3:.1f} ms  policy copy out {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
 
   pkl_path = policy_pkl_path(cam_w, cam_h)
   with open(pkl_path, 'wb') as f:
