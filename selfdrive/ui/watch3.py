@@ -21,7 +21,7 @@ def render_na(rect: rl.Rectangle, font_size: int = 32):
   x = int(rect.x + (rect.width - tw) / 2)
   y = int(rect.y + (rect.height - th) / 2)
 
-  rl.draw_text_ex(font, text, x, y, font_size, rl.WHITE)
+  rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, rl.WHITE)
 
 if __name__ == "__main__":
   gui_app.init_window("CAMERA FOCUSING")
@@ -88,25 +88,25 @@ if __name__ == "__main__":
       if cam[0][2] > MAX_SAME:
         render_na(rect)
 
-      rl.draw_text_ex(font, cam[1], 10, 10, 80, ROW_COLORS[current_device])
-      #rl.draw_text_ex(font, 'SHIFT TO ZOOM', 10, 90, 30, ROW_COLORS[current_device])
+      rl.draw_text_ex(font, cam[1], rl.Vector2(10, 10), 80, 0, ROW_COLORS[current_device])
+      #rl.draw_text_ex(font, 'SHIFT TO ZOOM', rl.Vector2(10, 90), 30, 0, ROW_COLORS[current_device])
     elif current_device != -1:
       roads[current_device][0].render(rl.Rectangle(gui_app.width // 4, 0, gui_app.width // 2, gui_app.height // 2))
-      rl.draw_text_ex(font, "2", gui_app.width // 2 + gui_app.width // 4 - 100, 0, 80, ROW_COLORS[current_device])
+      rl.draw_text_ex(font, "2", rl.Vector2(gui_app.width // 2 + gui_app.width // 4 - 100), 80, 0, ROW_COLORS[current_device])
       if roads[current_device][2] > MAX_SAME:
         render_na(rl.Rectangle(gui_app.width // 4, 0, gui_app.width // 2, gui_app.height // 2))
 
       wides[current_device][0].render(rl.Rectangle(0, gui_app.height // 2, gui_app.width // 2, gui_app.height // 2))
-      rl.draw_text_ex(font, "1", gui_app.height - 120, gui_app.height // 2, 80, ROW_COLORS[current_device])
+      rl.draw_text_ex(font, "1", rl.Vector2(gui_app.height - 120, gui_app.height // 2), 80, 0, ROW_COLORS[current_device])
       if wides[current_device][2] > MAX_SAME:
         render_na(rl.Rectangle(0, gui_app.height // 2, gui_app.width // 2, gui_app.height // 2))
 
       drivers[current_device][0].render(rl.Rectangle(gui_app.width // 2, gui_app.height // 2, gui_app.width // 2, gui_app.height // 2))
-      rl.draw_text_ex(font, "3", gui_app.width - 120, gui_app.height // 2, 80, ROW_COLORS[current_device])
+      rl.draw_text_ex(font, "3", rl.Vector2(gui_app.width - 120, gui_app.height // 2), 80, 0, ROW_COLORS[current_device])
       if drivers[current_device][2] > MAX_SAME:
         render_na(rl.Rectangle(gui_app.width // 2, gui_app.height // 2, gui_app.width // 2, gui_app.height // 2))
 
-      rl.draw_text_ex(font, f"DEVICE {current_device + 1}", 10, 10, 80, ROW_COLORS[current_device])
+      rl.draw_text_ex(font, f"DEVICE {current_device + 1}", rl.Vector2(10, 10), 80, 0, ROW_COLORS[current_device])
     else:
 
       right_panel_frac = 1
@@ -165,8 +165,8 @@ if __name__ == "__main__":
         rl.draw_text_ex(
           font,
           label,
-          int(panel_x + 50),
-          int(y + 150),
+          rl.Vector2(int(panel_x + 50), int(y + 150)),
           50,
+          0,
           ROW_COLORS[i % len(ROW_COLORS)]
         )
