@@ -675,7 +675,7 @@ wheels = [
 [[package]]
 name = "msgq"
 version = "0.1.0"
-source = { git = "https://github.com/commaai/msgq.git?rev=fix_packages#194c6c3f35dca8c9126f09a089094ce7f9357195" }
+source = { git = "https://github.com/commaai/msgq.git?rev=fix_packages#2ee626d1335ca27d178b3bd5c6a684f25b05fd90" }
 dependencies = [
     { name = "numpy" },
 ]

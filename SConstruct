@@ -188,7 +188,8 @@ Export('common')
 env_swaglog = env.Clone()
 env_swaglog['CXXFLAGS'].append('-DSWAGLOG="\\"common/swaglog.h\\""')
 
-# Build msgq from installed package
+# Build msgq/visionipc static libraries (for linking into openpilot C++ binaries)
+# Note: Cython extensions (ipc_pyx.so, visionipc_pyx.so) are built by pip install
 msgq_dir = _msgq.BASEDIR
 vipc_dir = os.path.join(msgq_dir, 'visionipc')
 
@@ -196,19 +197,13 @@ msgq_sources = [os.path.join(msgq_dir, f) for f in
                 ['ipc.cc', 'event.cc', 'impl_msgq.cc', 'impl_fake.cc', 'msgq.cc']]
 msgq_objects = env_swaglog.SharedObject(msgq_sources)
 msgq_lib = env.Library('msgq', msgq_objects)
-msgq_python = envCython.Program(os.path.join(msgq_dir, 'ipc_pyx.so'),
-                                os.path.join(msgq_dir, 'ipc_pyx.pyx'),
-                                LIBS=envCython["LIBS"]+[msgq_lib, common])
 
 vipc_files = ['visionipc.cc', 'visionipc_server.cc', 'visionipc_client.cc']
 vipc_files += ['visionbuf_ion.cc'] if arch == "larch64" else ['visionbuf.cc']
 vipc_sources = [os.path.join(vipc_dir, f) for f in vipc_files]
 vipc_objects = env.SharedObject(vipc_sources)
 visionipc = env.Library('visionipc', vipc_objects)
-envCython.Program(os.path.join(vipc_dir, 'visionipc_pyx.so'),
-                  os.path.join(vipc_dir, 'visionipc_pyx.pyx'),
-                  LIBS=envCython["LIBS"] + [visionipc, msgq_lib, common])
-Export('visionipc', 'msgq_lib', 'msgq_python')
+Export('visionipc', 'msgq_lib')
 
 SConscript(['cereal/SConscript'])
 
@@ -217,16 +212,14 @@ messaging = [socketmaster, msgq_lib, 'capnp', 'kj',]
 Export('messaging')
 
 
-# Build rednose library
+# Build rednose static library (for linking into openpilot C++ binaries)
+# Note: Cython extension (ekf_sym_pyx.so) is built by pip install
 Import('_common')
 rednose_helpers = rednose.HELPERS_PATH
 rednose_cc = [os.path.join(rednose_helpers, f) for f in ['ekf_load.cc', 'ekf_sym.cc']]
 ekf_objects = env.SharedObject(rednose_cc)
 rednose_lib = env.Library(os.path.join(rednose_helpers, 'ekf_sym'), ekf_objects, LIBS=['dl', _common, 'zmq'])
-rednose_python = envCython.Program(os.path.join(rednose_helpers, 'ekf_sym_pyx.so'),
-                                   [os.path.join(rednose_helpers, 'ekf_sym_pyx.pyx'), ekf_objects],
-                                   LIBS=['dl'] + envCython["LIBS"])
-Export('rednose_lib', 'rednose_python')
+Export('rednose_lib')
 
 # Build opendbc libsafety for tests
 safety_dir = os.path.join(os.path.dirname(opendbc.__file__), 'safety', 'tests', 'libsafety')
