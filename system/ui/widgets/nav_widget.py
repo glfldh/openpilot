@@ -62,7 +62,7 @@ class NavWidget(Widget, abc.ABC):
 
     self._pos_filter = BounceFilter(0.0, 0.1, 1 / gui_app.target_fps, bounce=1)
     self._playing_dismiss_animation = False
-    self._pop_complete_callback: Callable[[], None] | None = None
+    self._dismiss_callback: Callable | None = None
     self._trigger_animate_in = False
     self._nav_bar_show_time = 0.0
     self._back_enabled: bool | Callable[[], bool] = True
@@ -182,12 +182,13 @@ class NavWidget(Widget, abc.ABC):
       new_y = self._pos_filter.x = 0.0
 
     if new_y > self._rect.height + DISMISS_PUSH_OFFSET - 10:
-      if self._pop_complete_callback is not None:
-        cb = self._pop_complete_callback
-        self._pop_complete_callback = None
-        cb()
-      elif self._back_callback is not None:
+      if self._back_callback is not None:
         self._back_callback()
+
+      if self._dismiss_callback is not None:
+        cb = self._dismiss_callback
+        self._dismiss_callback = None
+        cb()
 
       self._playing_dismiss_animation = False
       self._back_button_start_pos = None
@@ -224,23 +225,16 @@ class NavWidget(Widget, abc.ABC):
 
     return ret
 
-  def request_pop(self, on_complete: Callable[[], None]):
-    if self._pop_complete_callback is not None:
-      return
-
-    if self._playing_dismiss_animation:
-      on_complete()
-      return
-
-    self._pos_filter.update_alpha(0.1)
-    self._playing_dismiss_animation = True
-    self._pop_complete_callback = on_complete
+  def dismiss(self, callback: Callable | None = None):
+    """Programmatically trigger the dismiss animation. Calls pop_widget when done, then callback."""
+    if not self._playing_dismiss_animation:
+      self._pos_filter.update_alpha(0.1)
+      self._playing_dismiss_animation = True
+    self._dismiss_callback = callback
 
   def show_event(self):
     super().show_event()
     # FIXME: we don't know the height of the rect at first show_event since it's before the first render :(
     #  so we need this hacky bool for now
     self._trigger_animate_in = True
-    self._playing_dismiss_animation = False
-    self._pop_complete_callback = None
     self._nav_bar.show_event()

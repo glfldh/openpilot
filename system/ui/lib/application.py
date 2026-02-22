@@ -389,13 +389,8 @@ class GuiApplication:
       cloudlog.warning("At least one widget should remain on the stack, ignoring pop!")
       return
 
-    widget = self._nav_stack[-1]
-    widget.request_pop(self._pop_widget_finish)
-
-  def _pop_widget_finish(self):
-    if len(self._nav_stack) < 2:
-      return
-
+    # re-enable previous widget and pop current
+    # TODO: switch to touch_valid
     prev_widget = self._nav_stack[-2]
     prev_widget.set_enabled(True)
 
@@ -407,8 +402,9 @@ class GuiApplication:
       cloudlog.warning("Widget not in stack, cannot pop to it!")
       return
 
+    # pops all widgets after specified widget
     while len(self._nav_stack) > 0 and self._nav_stack[-1] != widget:
-      self._pop_widget_finish()
+      self.pop_widget()
 
   def get_active_widget(self):
     if len(self._nav_stack) > 0:
@@ -563,6 +559,8 @@ class GuiApplication:
         # Allow a Widget to still run a function regardless of the stack depth
         if self._nav_stack_tick is not None:
           self._nav_stack_tick()
+
+        print('Nav stack', [widget.__class__.__name__ for widget in self._nav_stack])
 
         # Only render top widgets
         for widget in self._nav_stack[-self._nav_stack_widgets_to_render:]:
