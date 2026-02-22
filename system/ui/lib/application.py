@@ -389,8 +389,13 @@ class GuiApplication:
       cloudlog.warning("At least one widget should remain on the stack, ignoring pop!")
       return
 
-    # re-enable previous widget and pop current
-    # TODO: switch to touch_valid
+    widget = self._nav_stack[-1]
+    widget.animate_out(self._pop_widget_finish)
+
+  def _pop_widget_finish(self):
+    if len(self._nav_stack) < 2:
+      return
+
     prev_widget = self._nav_stack[-2]
     prev_widget.set_enabled(True)
 
@@ -402,9 +407,8 @@ class GuiApplication:
       cloudlog.warning("Widget not in stack, cannot pop to it!")
       return
 
-    # pops all widgets after specified widget
     while len(self._nav_stack) > 0 and self._nav_stack[-1] != widget:
-      self.pop_widget()
+      self._pop_widget_finish()
 
   def get_active_widget(self):
     if len(self._nav_stack) > 0:
