@@ -560,8 +560,6 @@ class GuiApplication:
         if self._nav_stack_tick is not None:
           self._nav_stack_tick()
 
-        print('Nav stack', [widget.__class__.__name__ for widget in self._nav_stack])
-
         # Only render top widgets
         for widget in self._nav_stack[-self._nav_stack_widgets_to_render:]:
           widget.render(rl.Rectangle(0, 0, self.width, self.height))
