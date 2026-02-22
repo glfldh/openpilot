@@ -189,6 +189,10 @@ class Widget(abc.ABC):
     """Optionally handle mouse events. This is called before rendering."""
     # Default implementation does nothing, can be overridden by subclasses
 
+  def request_pop(self, on_complete: Callable[[], None]):
+    """Request this widget be popped from the nav stack. Subclasses can animate before completing."""
+    on_complete()
+
   def show_event(self):
     """Optionally handle show event. Parent must manually call this"""
     # TODO: iterate through all child objects, check for subclassing from Widget/Layout (Scroller)

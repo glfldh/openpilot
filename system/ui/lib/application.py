@@ -390,7 +390,7 @@ class GuiApplication:
       return
 
     widget = self._nav_stack[-1]
-    widget.animate_out(self._pop_widget_finish)
+    widget.request_pop(self._pop_widget_finish)
 
   def _pop_widget_finish(self):
     if len(self._nav_stack) < 2:

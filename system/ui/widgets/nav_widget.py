@@ -224,8 +224,7 @@ class NavWidget(Widget, abc.ABC):
 
     return ret
 
-  def animate_out(self, on_complete: Callable[[], None]):
-    """Start the dismiss animation. Calls on_complete when fully off-screen."""
+  def request_pop(self, on_complete: Callable[[], None]):
     if self._pop_complete_callback is not None:
       return
 
