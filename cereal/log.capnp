@@ -500,7 +500,7 @@ struct DeviceState @0xa4d8b5af2aa492eb {
   intakeTempC @46 :Float32;
   exhaustTempC @47 :Float32;
   gnssTempC @48 :Float32;
-  bottomSocTempC @49 :Float32;
+  bottomSocTempC @50 :Float32;
   maxTempC @44 :Float32;  # max of other temps, used to control fan
   thermalZones @38 :List(ThermalZone);
   thermalStatus @14 :ThermalStatus;
