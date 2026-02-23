@@ -17,10 +17,12 @@ from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
 
 MODELS_DIR = Path(__file__).parent / 'models'
 
-CAMERA_CONFIGS = [
-  # (_ar_ox_fisheye.width, _ar_ox_fisheye.height),  # tici: 1928x1208
-  (_os_fisheye.width, _os_fisheye.height),        # mici: 1344x760
-]
+
+from openpilot.system.hardware import HARDWARE
+device_type = HARDWARE.get_device_type()
+
+# mici: 1344x760, tici: 1928x1208
+CAMERA_CONFIGS = [(_os_fisheye.width, _os_fisheye.height) if device_type == 'mici' else (_ar_ox_fisheye.width, _ar_ox_fisheye.height)]
 
 UV_SCALE_MATRIX = np.array([[0.5, 0, 0], [0, 0.5, 0], [0, 0, 1]], dtype=np.float32)
 UV_SCALE_MATRIX_INV = np.linalg.inv(UV_SCALE_MATRIX)
@@ -203,12 +205,6 @@ def compile_dm_warp(cam_w, cam_h):
   print(f"  Saved to {pkl_path}")
 
 
-def run_and_save_pickle():
-  for cam_w, cam_h in CAMERA_CONFIGS:
-    # TODO folded in policy run, remove make update_both_images, make sure SConscript flags are correct
-    compile_modeld_warp(cam_w, cam_h) # compile_dm_warp segfaults if i remove this line
-    compile_dm_warp(cam_w, cam_h)
-
-
 if __name__ == "__main__":
-  run_and_save_pickle()
+  for cam_w, cam_h in CAMERA_CONFIGS:
+    compile_dm_warp(cam_w, cam_h)
