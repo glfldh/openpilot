@@ -29,6 +29,7 @@ from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.widgets.slider import LargerSlider, SmallSlider
 from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiNetworkButton, WifiUIMici
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_HORIZONTAL_PADDING
 
 NetworkType = log.DeviceState.NetworkType
 
@@ -432,18 +433,52 @@ class FailedPage(Widget):
     ))
 
 
+class ConnectBigButton(BigButton):
+  def __init__(self):
+    super().__init__("connect to internet", "or swipe down to go back")
+    # self.set_enabled(False)
+    self.set_touch_valid_callback(lambda: False)
+
+    # 64, 56
+    bg_txt = gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True)
+    # rl.image_rotate_cw(bg_txt)
+    # rl.image_rotate_cw(bg_txt)
+    self.set_icon(bg_txt)
+
+    self._label = UnifiedLabel("connect to\ninternet", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+                                 font_weight=FontWeight.DISPLAY_REGULAR)
+    self._sub_label = UnifiedLabel("or swipe down to go back", 28, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+                                   font_weight=FontWeight.DISPLAY_REGULAR)
+
+  def _width_hint(self) -> int:
+    return int(self._rect.width)# - LABEL_HORIZONTAL_PADDING * 1)
+    # Single line if scrolling, so hide behind icon if exists
+    icon_size = self._icon_size[0] if self._txt_icon and self._scroll and self.value else 0
+    return int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2 - icon_size)
+
+  def _render(self, _):
+    rl.draw_rectangle_rounded(self._rect, 0.4, 10, rl.Color(255, 255, 255, int(255 * 0.15)))
+    self._draw_content(self._rect.y)
+
+  # def _draw_content(self, btn_y: float):
+  #   super()._draw_content(btn_y)
+
+
 class NetworkSetupPage(NavWidget):
   def __init__(self, wifi_manager, continue_callback: Callable, back_callback: Callable):
     super().__init__()
     self._wifi_ui = WifiUIMici(wifi_manager)
 
+    self._connect_button = ConnectBigButton()
     self._wifi_button = WifiNetworkButton(wifi_manager)
+    self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
     # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
 
     self._scroller = Scroller([
+      self._connect_button,
       self._wifi_button,
-      self._wifi_ui,
-    ], snap_items=False)
+      # self._wifi_ui,
+    ])
 
     self._no_wifi_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 58, 50)
     self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 58, 50)
@@ -476,7 +511,7 @@ class NetworkSetupPage(NavWidget):
 
   def _render(self, _):
     self._scroller.render(self._rect)
-    return DialogResult.NO_ACTION
+    return
 
     self._network_header.render(rl.Rectangle(
       self._rect.x + 16,
@@ -569,8 +604,8 @@ class Setup(Widget):
       print('SHOWING NETWORK SETUP PAGE')
       # gui_app.set_modal_overlay(self._network_setup_page)
       gui_app.push_widget(self._network_setup_page)
-    else:
-      self._network_setup_page.hide_event()
+    # else:
+    #   self._network_setup_page.hide_event()
 
   def _render(self, rect: rl.Rectangle):
     if self.state == SetupState.GETTING_STARTED:
