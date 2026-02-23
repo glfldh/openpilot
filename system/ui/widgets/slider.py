@@ -177,6 +177,7 @@ class BigSlider(SmallSlider):
 
     self._bg_txt = gui_app.texture("icons_mici/buttons/slider_bg.png", 520, 180)
     self._circle_bg_txt = gui_app.texture("icons_mici/buttons/button_circle.png", 180, 180)
+    self._circle_bg_pressed_txt = gui_app.texture("icons_mici/buttons/button_circle_pressed.png", 180, 180)
     self._circle_arrow_txt = self._icon
 
 
