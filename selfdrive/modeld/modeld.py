@@ -172,7 +172,6 @@ def _make_run_policy(vision_runner, policy_runner, cam_w, cam_h,
 
     des_buf, traf = des_buf.to(Device.DEFAULT), traf.to(Device.DEFAULT)
     feat_q = feat_q[:, 1:].cat(vision_out[:, vision_features_slice].reshape(1, 1, -1), dim=1).contiguous()
-    # feat_buf = Tensor.cat(*[feat_q[:, i:i+1] for i in range(frame_skip - 1, feat_q.shape[1], frame_skip)], dim=1) # TODO double check this, why complicated?
     feat_buf = feat_q[:, frame_skip - 1::frame_skip]
 
     policy_out = next(iter(policy_runner({
