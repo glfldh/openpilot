@@ -435,33 +435,39 @@ class FailedPage(Widget):
 
 class ConnectBigButton(BigButton):
   def __init__(self):
-    super().__init__("connect to internet", "or swipe down to go back")
-    # self.set_enabled(False)
+    super().__init__("connect to\ninternet", "or swipe down to go back",
+                     gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True))
     self.set_touch_valid_callback(lambda: False)
 
-    # 64, 56
-    bg_txt = gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True)
-    # rl.image_rotate_cw(bg_txt)
-    # rl.image_rotate_cw(bg_txt)
-    self.set_icon(bg_txt)
+    self._label.set_font_size(36)
+    self._label.set_font_weight(FontWeight.DISPLAY_REGULAR)
+    self._label.set_line_height(1.0)
 
-    self._label = UnifiedLabel("connect to\ninternet", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                 font_weight=FontWeight.DISPLAY_REGULAR)
-    self._sub_label = UnifiedLabel("or swipe down to go back", 28, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                   font_weight=FontWeight.DISPLAY_REGULAR)
+    self._sub_label.set_font_size(28)
+    self._sub_label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.9)))
+    self._sub_label.set_font_weight(FontWeight.DISPLAY_REGULAR)
 
   def _width_hint(self) -> int:
-    return int(self._rect.width)# - LABEL_HORIZONTAL_PADDING * 1)
-    # Single line if scrolling, so hide behind icon if exists
-    icon_size = self._icon_size[0] if self._txt_icon and self._scroll and self.value else 0
-    return int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2 - icon_size)
+    return int(self._rect.width)
 
   def _render(self, _):
     rl.draw_rectangle_rounded(self._rect, 0.4, 10, rl.Color(255, 255, 255, int(255 * 0.15)))
     self._draw_content(self._rect.y)
 
-  # def _draw_content(self, btn_y: float):
-  #   super()._draw_content(btn_y)
+
+class WaitingForInternetBigButton(BigButton):
+  def __init__(self):
+    # special button with new custom bg_txt. only big label, no icon. center h and v aligned label
+    super().__init__("waiting for\ninternet...", "")
+
+    self._label.set_font_size(48)
+    self._label.set_alignment(rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
+    self._label.set_alignment_vertical(rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+
+  def _load_images(self):
+    self._txt_default_bg = gui_app.texture("icons_mici/setup/continue.png", 402, 180)
+    self._txt_pressed_bg = gui_app.texture("icons_mici/setup/continue_pressed.png", 402, 180)
+    self._txt_disabled_bg = gui_app.texture("icons_mici/setup/continue_disabled.png", 402, 180)
 
 
 class NetworkSetupPage(NavWidget):
@@ -470,14 +476,19 @@ class NetworkSetupPage(NavWidget):
     self._wifi_ui = WifiUIMici(wifi_manager)
 
     self._connect_button = ConnectBigButton()
+
     self._wifi_button = WifiNetworkButton(wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
     # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
 
+    self._continue_button = WaitingForInternetBigButton()
+    # self._continue_button.set_click_callback(do jiggle)
+
+
     self._scroller = Scroller([
+      self._continue_button,
       self._connect_button,
       self._wifi_button,
-      # self._wifi_ui,
     ])
 
     self._no_wifi_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 58, 50)

@@ -178,6 +178,9 @@ class BigButton(Widget):
   def get_text(self):
     return self.text
 
+  # def _draw_background(self):
+
+
   def _draw_content(self, btn_y: float):
     # LABEL ------------------------------------------------------------------
     label_x = self._rect.x + LABEL_HORIZONTAL_PADDING
@@ -187,6 +190,7 @@ class BigButton(Widget):
     label_rect = rl.Rectangle(label_x, btn_y + LABEL_VERTICAL_PADDING, self._width_hint(),
                               self._rect.height - LABEL_VERTICAL_PADDING * 2)
     self._label.render(label_rect)
+    rl.draw_rectangle_lines_ex(label_rect, 1, rl.RED)
 
     if self.value:
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
@@ -224,8 +228,9 @@ class BigButton(Widget):
     scaled_rect = rl.Rectangle(btn_x, btn_y, self._rect.width * scale, self._rect.height * scale)
     rl.draw_rectangle_rounded(scaled_rect, 0.4, 7, rl.Color(0, 0, 0, int(255 * 0.5)))
 
-    self._draw_content(btn_y)
+    # TODO: transparent continue buttons
     rl.draw_texture_ex(txt_bg, (btn_x, btn_y), 0, scale, rl.WHITE)
+    self._draw_content(btn_y)
 
 
 class BigToggle(BigButton):
