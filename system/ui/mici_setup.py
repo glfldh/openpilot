@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import traceback
 from abc import abstractmethod
 import os
 import re
@@ -25,11 +26,14 @@ from openpilot.system.ui.widgets.button import (IconButton, SmallButton, WideRou
                                                 SmallCircleIconButton, WidishRoundedButton, SmallRedPillButton,
                                                 FullRoundedButton)
 from openpilot.system.ui.widgets.label import UnifiedLabel
-from openpilot.system.ui.widgets.scroller import Scroller
+from openpilot.system.ui.widgets.scroller import Scroller, ITEM_SPACING
 from openpilot.system.ui.widgets.slider import LargerSlider, SmallSlider
 from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiNetworkButton, WifiUIMici
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_HORIZONTAL_PADDING
+
+from selfdrive.ui.mici.widgets.button import BigCircleButton
+from selfdrive.ui.mici.widgets.dialog import BigConfirmationDialogV2
 
 NetworkType = log.DeviceState.NetworkType
 
@@ -96,8 +100,8 @@ class NetworkConnectivityMonitor:
 
 class SetupState(IntEnum):
   GETTING_STARTED = 0
-  NETWORK_SETUP = 1
-  NETWORK_SETUP_CUSTOM_SOFTWARE = 2
+  # NETWORK_SETUP = 1
+  # NETWORK_SETUP_CUSTOM_SOFTWARE = 2
   SOFTWARE_SELECTION = 3
   DOWNLOADING = 4
   DOWNLOAD_FAILED = 5
@@ -310,9 +314,34 @@ class TermsPage(Widget):
     ))
 
 
-class CustomSoftwareWarningPage(TermsPage):
-  def __init__(self, continue_callback: Callable, back_callback: Callable):
-    super().__init__(continue_callback, back_callback)
+class CustomSoftwareWarningPage(NavWidget):
+  def __init__(self, continue_callback: Callable):#, back_callback: Callable):
+    super().__init__()
+    # super().__init__(continue_callback, back_callback)
+
+    self.set_back_callback(gui_app.pop_widget)
+
+    confirm_dialog = BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
+                                             confirm_callback=continue_callback)
+    self._continue_button = BigCircleButton("icons_mici/setup/driver_monitoring/dm_check.png")
+    self._continue_button.set_click_callback(lambda: gui_app.push_widget(confirm_dialog))
+
+    back_dialog = BigConfirmationDialogV2("nevermind\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)
+    self._back_button = BigCircleButton("icons_mici/setup/cancel.png")
+    self._back_button.set_click_callback(lambda: gui_app.push_widget(back_dialog))
+
+    self._scroller = Scroller([
+      GreyBigButton("use caution", "you are installing\n3rd party software",
+                    gui_app.texture("icons_mici/setup/warning.png", 64, 58)),
+      GreyBigButton("", "• It has not been tested by comma.\n\n" +
+                    "• It may not comply with relevant\nsafety standards.", wide=True),
+      GreyBigButton("", "• It may cause damage to your\ndevice and/or vehicle.\n\n\n", wide=True),
+      GreyBigButton("", "To restore your\ndevice to a factory\nstate later, go to\n\nhttps://flash.comma.ai",
+                    gui_app.texture("icons_mici/setup/restore.png", 64, 64)),
+      self._continue_button,
+      self._back_button,
+    ])
+    return
 
     self._title_header = TermsHeader("use caution installing\n3rd party software",
                                      gui_app.texture("icons_mici/setup/warning.png", 66, 60))
@@ -326,31 +355,34 @@ class CustomSoftwareWarningPage(TermsPage):
                                       36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                       font_weight=FontWeight.ROMAN)
 
-  @property
-  def _content_height(self):
-    return self._restore_body.rect.y + self._restore_body.rect.height - self._scroll_panel.get_offset()
+  def _render(self, _):
+    self._scroller.render(self._rect)
 
-  def _render_content(self, scroll_offset):
-    self._title_header.set_position(self._rect.x + 16, self._rect.y + 8 + scroll_offset)
-    self._title_header.render()
-
-    body_rect = rl.Rectangle(
-      self._rect.x + 8,
-      self._title_header.rect.y + self._title_header.rect.height + self.ITEM_SPACING,
-      self._rect.width - 50,
-      self._body.get_content_height(int(self._rect.width - 50)),
-    )
-    self._body.render(body_rect)
-
-    self._restore_header.set_position(self._rect.x + 16, self._body.rect.y + self._body.rect.height + self.ITEM_SPACING)
-    self._restore_header.render()
-
-    self._restore_body.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._restore_header.rect.y + self._restore_header.rect.height + self.ITEM_SPACING,
-      self._rect.width - 50,
-      self._restore_body.get_content_height(int(self._rect.width - 50)),
-    ))
+  # @property
+  # def _content_height(self):
+  #   return self._restore_body.rect.y + self._restore_body.rect.height - self._scroll_panel.get_offset()
+  #
+  # def _render_content(self, scroll_offset):
+  #   self._title_header.set_position(self._rect.x + 16, self._rect.y + 8 + scroll_offset)
+  #   self._title_header.render()
+  #
+  #   body_rect = rl.Rectangle(
+  #     self._rect.x + 8,
+  #     self._title_header.rect.y + self._title_header.rect.height + self.ITEM_SPACING,
+  #     self._rect.width - 50,
+  #     self._body.get_content_height(int(self._rect.width - 50)),
+  #   )
+  #   self._body.render(body_rect)
+  #
+  #   self._restore_header.set_position(self._rect.x + 16, self._body.rect.y + self._body.rect.height + self.ITEM_SPACING)
+  #   self._restore_header.render()
+  #
+  #   self._restore_body.render(rl.Rectangle(
+  #     self._rect.x + 8,
+  #     self._restore_header.rect.y + self._restore_header.rect.height + self.ITEM_SPACING,
+  #     self._rect.width - 50,
+  #     self._restore_body.get_content_height(int(self._rect.width - 50)),
+  #   ))
 
 
 class DownloadingPage(Widget):
@@ -433,11 +465,14 @@ class FailedPage(Widget):
     ))
 
 
-class ConnectBigButton(BigButton):
-  def __init__(self):
-    super().__init__("connect to\ninternet", "or swipe down to go back",
-                     gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True))
+class GreyBigButton(BigButton):
+  """Users should manage newlines with this class themselves"""
+  def __init__(self, *args, wide: bool = False, **kwargs,):
+    super().__init__(*args, **kwargs)
     self.set_touch_valid_callback(lambda: False)
+
+    if wide:
+      self._rect.width = 476
 
     self._label.set_font_size(36)
     self._label.set_font_weight(FontWeight.DISPLAY_REGULAR)
@@ -448,7 +483,7 @@ class ConnectBigButton(BigButton):
     self._sub_label.set_font_weight(FontWeight.DISPLAY_REGULAR)
 
   def _width_hint(self) -> int:
-    return int(self._rect.width)
+    return int(self._rect.width - LABEL_HORIZONTAL_PADDING)
 
   def _render(self, _):
     rl.draw_rectangle_rounded(self._rect, 0.4, 10, rl.Color(255, 255, 255, int(255 * 0.15)))
@@ -473,23 +508,33 @@ class WaitingForInternetBigButton(BigButton):
 class NetworkSetupPage(NavWidget):
   def __init__(self, wifi_manager, continue_callback: Callable, back_callback: Callable):
     super().__init__()
+    self._wifi_manager = wifi_manager
     self._wifi_ui = WifiUIMici(wifi_manager)
+    self.set_back_callback(gui_app.pop_widget)
 
-    self._connect_button = ConnectBigButton()
+    self._connect_button = GreyBigButton("connect to\ninternet", "or swipe down to go back",
+                                         gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True))
 
     self._wifi_button = WifiNetworkButton(wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
     # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
 
     self._continue_button = WaitingForInternetBigButton()
-    # self._continue_button.set_click_callback(do jiggle)
 
+    def _on_continue_click():
+      # self._wifi_button.trigger_press_flash()
+      self._scroller.scroll_to(self._wifi_button.rect.x - ITEM_SPACING, smooth=True)
+      # continue_callback()
+
+    self._continue_button.set_click_callback(_on_continue_click)
 
     self._scroller = Scroller([
-      self._continue_button,
       self._connect_button,
       self._wifi_button,
+      self._continue_button,
     ])
+
+    return
 
     self._no_wifi_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 58, 50)
     self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 58, 50)
@@ -508,9 +553,15 @@ class NetworkSetupPage(NavWidget):
 
     self._continue_button = WidishRoundedButton("continue")
     self._continue_button.set_enabled(False)
-    self._continue_button.set_click_callback(continue_callback)
+
+    def _on_continue_click():
+      self._wifi_button.trigger_press_flash()
+      continue_callback()
+
+    self._continue_button.set_click_callback(_on_continue_click)
 
   def set_has_internet(self, has_internet: bool):
+    return
     if has_internet:
       self._network_header.set_title("connected to internet")
       self._network_header.set_icon(self._wifi_full_txt)
@@ -519,6 +570,11 @@ class NetworkSetupPage(NavWidget):
       self._network_header.set_title(self._waiting_text)
       self._network_header.set_icon(self._no_wifi_txt)
       self._continue_button.set_enabled(False)
+
+  def _update_state(self):
+    super()._update_state()
+    if self._wifi_manager.wifi_state.ssid:
+      self._continue_button.set_visible(True)
 
   def _render(self, _):
     self._scroller.render(self._rect)
@@ -573,11 +629,12 @@ class Setup(Widget):
 
     self._start_page = StartPage()
     self._start_page.set_click_callback(self._getting_started_button_callback)
+    self._start_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._network_setup_page = NetworkSetupPage(self._wifi_manager, self._network_setup_continue_button_callback,
                                                 self._network_setup_back_button_callback)
     # TODO: change these to touch_valid
-    self._network_setup_page.set_enabled(lambda: self.enabled)  # for nav stack
+    # self._network_setup_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._software_selection_page = SoftwareSelectionPage(self._software_selection_continue_button_callback,
                                                           self._software_selection_custom_software_button_callback)
@@ -586,13 +643,14 @@ class Setup(Widget):
     self._download_failed_page = FailedPage(HARDWARE.reboot, self._download_failed_startover_button_callback)
     self._download_failed_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._custom_software_warning_page = CustomSoftwareWarningPage(self._software_selection_custom_software_continue,
-                                                                   self._custom_software_warning_back_button_callback)
+    # self._custom_software_warning_page = CustomSoftwareWarningPage(self._software_selection_custom_software_continue,
+    self._custom_software_warning_page = CustomSoftwareWarningPage(self._push_network_setup)
     self._custom_software_warning_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._downloading_page = DownloadingPage()
 
   def _nav_stack_tick(self):
+    return
     has_internet = self._network_monitor.network_connected.is_set()
     if has_internet and not self._prev_has_internet:
       gui_app.pop_widgets_to(self)
@@ -606,23 +664,32 @@ class Setup(Widget):
     self.state = state
     if self.state == SetupState.SOFTWARE_SELECTION:
       self._software_selection_page.reset()
-    elif self.state == SetupState.CUSTOM_SOFTWARE_WARNING:
-      self._custom_software_warning_page.reset()
+    # elif self.state == SetupState.CUSTOM_SOFTWARE_WARNING:
+    #   self._custom_software_warning_page.reset()
 
-    if self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
-      # self._network_setup_page.show_event()
-      self._network_monitor.reset()
-      print('SHOWING NETWORK SETUP PAGE')
-      # gui_app.set_modal_overlay(self._network_setup_page)
-      gui_app.push_widget(self._network_setup_page)
-    # else:
-    #   self._network_setup_page.hide_event()
+    # if self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
+    #   # self._network_setup_page.show_event()
+    #   self._network_monitor.reset()
+    #   print('SHOWING NETWORK SETUP PAGE')
+    #   # gui_app.set_modal_overlay(self._network_setup_page)
+    #   gui_app.push_widget(self._network_setup_page)
+    # # else:
+    # #   self._network_setup_page.hide_event()
+
+  def _push_network_setup(self):
+    # self._network_setup_page.show_event()
+    self._network_monitor.reset()
+    print('SHOWING NETWORK SETUP PAGE')
+    # gui_app.set_modal_overlay(self._network_setup_page)
+    gui_app.push_widget(self._network_setup_page)
+    self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _render(self, rect: rl.Rectangle):
+    print('state', repr(self.state))
     if self.state == SetupState.GETTING_STARTED:
       self._start_page.render(rect)
-    elif self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
-      self.render_network_setup(rect)
+    # elif self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
+    #   self.render_network_setup(rect)
     elif self.state == SetupState.SOFTWARE_SELECTION:
       self._software_selection_page.render(rect)
     elif self.state == SetupState.CUSTOM_SOFTWARE_WARNING:
@@ -691,7 +758,7 @@ class Setup(Widget):
       time.sleep(0.1)
       gui_app.request_close()
     else:
-      self._set_state(SetupState.NETWORK_SETUP)
+      self._push_network_setup()
 
   def download(self, url: str):
     # autocomplete incomplete URLs
@@ -779,6 +846,7 @@ def main():
       pass
     setup.close()
   except Exception as e:
+    traceback.print_exc()
     print(f"Setup error: {e}")
   finally:
     gui_app.close()
