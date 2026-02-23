@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 from enum import IntEnum
 import shutil
 from collections.abc import Callable
+
 import pyray as rl
+
 from cereal import log
 from openpilot.common.utils import run_cmd
 from openpilot.system.hardware import HARDWARE

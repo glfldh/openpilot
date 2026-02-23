@@ -43,11 +43,10 @@ class WifiNetworkButton(BigButton):
     if display_network is not None:
       strength = WifiIcon.get_strength_icon_idx(display_network.strength)
       self.set_icon(self._wifi_full_txt if strength == 2 else self._wifi_medium_txt if strength == 1 else self._wifi_low_txt)
+      self._draw_lock = display_network.security_type not in (SecurityType.OPEN, SecurityType.UNSUPPORTED)
     else:
       self.set_icon(self._wifi_slash_txt)
-
-  def set_draw_lock(self, draw: bool):
-    self._draw_lock = draw
+      self._draw_lock = False
 
   def _draw_content(self, btn_y: float):
     super()._draw_content(btn_y)
