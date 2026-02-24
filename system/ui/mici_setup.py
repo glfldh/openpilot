@@ -520,7 +520,7 @@ class BigPillButton(BigButton):
 
 
 class NetworkSetupPage(NavWidget):
-  def __init__(self, network_monitor: NetworkConnectivityMonitor, continue_callback: Callable, back_callback: Callable):
+  def __init__(self, network_monitor: NetworkConnectivityMonitor, continue_callback: Callable):
     super().__init__()
     self._wifi_manager = WifiManager()
     self._wifi_manager.set_active(True)
@@ -632,8 +632,7 @@ class Setup(Widget):
     self._start_page.set_click_callback(lambda: self._set_state(SetupState.SOFTWARE_SELECTION))
     self._start_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._network_setup_page = NetworkSetupPage(self._network_monitor, self._network_setup_continue_callback,
-                                                self._network_setup_back_button_callback)
+    self._network_setup_page = NetworkSetupPage(self._network_monitor, self._network_setup_continue_callback)
     # TODO: change these to touch_valid
     # self._network_setup_page.set_enabled(lambda: self.enabled)  # for nav stack
 
@@ -695,9 +694,6 @@ class Setup(Widget):
 
   def _download_failed_startover_button_callback(self):
     self._set_state(SetupState.START)
-
-  def _network_setup_back_button_callback(self):
-    self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _network_setup_continue_callback(self, custom_software: bool):
     if not custom_software:
