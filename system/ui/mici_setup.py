@@ -163,6 +163,38 @@ class SoftwareSelectionPage(Widget):
     self._custom_software_slider.render(custom_software_rect)
 
 
+class TermsHeader(Widget):
+  def __init__(self, text: str, icon_texture: rl.Texture):
+    super().__init__()
+
+    self._title = UnifiedLabel(text, 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+                               font_weight=FontWeight.BOLD, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+                               line_height=0.8)
+    self._icon_texture = icon_texture
+
+    self.set_rect(rl.Rectangle(0, 0, gui_app.width - 16 * 2, self._icon_texture.height))
+
+  def set_title(self, text: str):
+    self._title.set_text(text)
+
+  def set_icon(self, icon_texture: rl.Texture):
+    self._icon_texture = icon_texture
+
+  def _render(self, _):
+    rl.draw_texture_ex(self._icon_texture, rl.Vector2(self._rect.x, self._rect.y),
+                       0.0, 1.0, rl.WHITE)
+
+    # May expand outside parent rect
+    title_content_height = self._title.get_content_height(int(self._rect.width - self._icon_texture.width - 16))
+    title_rect = rl.Rectangle(
+      self._rect.x + self._icon_texture.width + 16,
+      self._rect.y + (self._rect.height - title_content_height) / 2,
+      self._rect.width - self._icon_texture.width - 16,
+      title_content_height,
+    )
+    self._title.render(title_rect)
+
+
 class TermsPage(Widget):
   ITEM_SPACING = 20
 
