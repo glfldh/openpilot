@@ -16,6 +16,8 @@ from collections.abc import Callable
 import pyray as rl
 
 from cereal import log
+from openpilot.system.hardware import TICI
+from openpilot.common.realtime import config_realtime_process, set_core_affinity
 from openpilot.common.utils import run_cmd
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -813,6 +815,9 @@ class Setup(Widget):
 
 
 def main():
+  # screen never turns off so we can start on 5
+  config_realtime_process(5 if TICI else 0, 51)
+
   try:
     gui_app.init_window("Setup")
     setup = Setup()
