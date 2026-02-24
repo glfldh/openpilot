@@ -336,7 +336,7 @@ class CustomSoftwareWarningPage(NavWidget):
       GreyBigButton("use caution", "you are installing\n3rd party software",
                     gui_app.texture("icons_mici/setup/warning.png", 64, 58)),
       GreyBigButton("", "• It has not been tested by comma.\n\n" +
-                    "• It may not comply with relevant\nsafety standards.", wide=True),
+                    "• It may not comply with\n relevant safety standards.", wide=True),
       GreyBigButton("", "• It may cause damage to your\ndevice and/or vehicle.\n\n\n", wide=True),
       GreyBigButton("", "To restore your\ndevice to a factory\nstate later, go to\n\nhttps://flash.comma.ai",
                     gui_app.texture("icons_mici/setup/restore.png", 64, 64)),
@@ -454,6 +454,7 @@ class GreyBigButton(BigButton):
     self._sub_label.set_font_size(28)
     self._sub_label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.9)))
     self._sub_label.set_font_weight(FontWeight.DISPLAY_REGULAR)
+    self._sub_label.set_line_height(0.9)
 
   def _width_hint(self) -> int:
     return int(self._rect.width - LABEL_HORIZONTAL_PADDING)

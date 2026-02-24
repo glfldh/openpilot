@@ -236,6 +236,7 @@ class BigButton(Widget):
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self._width_hint())
       sub_label_rect = rl.Rectangle(label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
+      # rl.draw_rectangle_lines_ex(sub_label_rect, 1, rl.BLUE)
       self._sub_label.render(sub_label_rect)
 
     # ICON -------------------------------------------------------------------
