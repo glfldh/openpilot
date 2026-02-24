@@ -180,10 +180,6 @@ class Scroller(Widget):
       if abs(self._scrolling_to_filter.x - self._scrolling_to[0]) < 1:
         self.scroll_panel.set_offset(self._scrolling_to[0])
         self._scrolling_to = None, False
-    else:
-      print('RESETTING SCROLL SOURCE')
-      # keep current scroll position up to date
-      self._scrolling_to_filter.x = self.scroll_panel.get_offset()
 
   def _get_scroll(self, visible_items: list[Widget], content_size: float) -> float:
     scroll_enabled = self._scroll_enabled() if callable(self._scroll_enabled) else self._scroll_enabled

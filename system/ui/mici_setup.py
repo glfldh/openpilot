@@ -59,11 +59,10 @@ exec ./launch_openpilot.sh
 
 
 class NetworkConnectivityMonitor:
-  def __init__(self, should_check: Callable[[], bool] | None = None, check_interval: float = 1.0):
+  def __init__(self, should_check: Callable[[], bool] | None = None):
     self.network_connected = threading.Event()
     self.wifi_connected = threading.Event()
     self._should_check = should_check or (lambda: True)
-    self._check_interval = check_interval
     self._stop_event = threading.Event()
     self._thread: threading.Thread | None = None
 
@@ -88,7 +87,7 @@ class NetworkConnectivityMonitor:
       if self._should_check():
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
-          urllib.request.urlopen(request, timeout=1.0)
+          urllib.request.urlopen(request, timeout=2.0)
           time.sleep(3)
           self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
@@ -98,7 +97,7 @@ class NetworkConnectivityMonitor:
       else:
         self.reset()
 
-      if self._stop_event.wait(timeout=self._check_interval):
+      if self._stop_event.wait(timeout=1.0):
         break
 
 

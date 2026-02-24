@@ -25,6 +25,8 @@ class WifiNetworkButton(BigButton):
     super().__init__("wi-fi", "not connected", self._wifi_slash_txt, scroll=True)
 
   def _update_state(self):
+    super()._update_state()
+
     # Update wi-fi button with ssid and ip address
     # TODO: make sure we handle hidden ssids
     wifi_state = self._wifi_manager.wifi_state
@@ -166,6 +168,7 @@ class NetworkLayoutMici(NavWidget):
 
   def hide_event(self):
     super().hide_event()
+    self._scroller.hide_event()
     self._wifi_manager.set_active(False)
 
     gui_app.set_nav_stack_tick(None)

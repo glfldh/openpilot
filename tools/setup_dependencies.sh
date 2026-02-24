@@ -48,14 +48,6 @@ function install_ubuntu_deps() {
     git \
     xvfb
 
-  $SUDO apt-get install -y --no-install-recommends \
-    python3-dev \
-    libgles2-mesa-dev \
-    libjpeg-dev \
-    libncurses5-dev \
-    libzstd-dev \
-    gettext
-
   if [[ -d "/etc/udev/rules.d/" ]]; then
     # Setup jungle udev rules
     $SUDO tee /etc/udev/rules.d/12-panda_jungle.rules > /dev/null <<EOF
