@@ -230,10 +230,34 @@ def compile_policy(cam_w, cam_h):
     t_pol = time.perf_counter()
     print(f"  [{i+1}/10] enqueue {(t_enqueue-st)*1e3:.1f} ms warp+vision+policy {(t_jit-st)*1e3:.1f} ms vision copy out {(t_vis-t_jit)*1e3:.1f} ms  policy copy out {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
 
+  # test jit
+  def run_test(fn, seed=100):
+    m = ModelState() # re-instantiate model state to get empty buffers
+    np.random.seed(seed)
+    f, bf = [np.random.randint(0, 255, yuv_size, dtype=np.uint8) for _ in range(2)] # dummy inputs
+    outs = fn(m.img_queues['img'], m.img_queues['big_img'],
+              Tensor.from_blob(f.ctypes.data, (yuv_size,), dtype='uint8', device=WARP_DEVICE),
+              Tensor.from_blob(bf.ctypes.data, (yuv_size,), dtype='uint8', device=WARP_DEVICE),
+              m.transforms['img'], m.transforms['big_img'],
+              m.features_queue, m.desire_tensor, m.traffic_tensor)
+    Device.default.synchronize()
+    return np.copy(outs[3].uop.base.buffer.numpy().flatten()), np.copy(outs[4].uop.base.buffer.numpy().flatten())
+
+  # test consistency
+  test_val = run_test(run_policy)
+  np.testing.assert_equal(test_val, run_test(run_policy), "JIT run failed")
+  print("jit run validated")
+
   pkl_path = policy_pkl_path(cam_w, cam_h)
-  with open(pkl_path, 'wb') as f:
-    pickle.dump(run_policy, f)
-  print(f"Saved to {pkl_path}")
+  print(f"saving pkl to {pkl_path}")
+  with open(pkl_path, 'wb') as f: pickle.dump(run_policy, f)
+
+  with open(pkl_path, 'rb') as f: pickle_loaded = pickle.load(f)
+  np.testing.assert_equal(test_val, run_test(pickle_loaded), "pickle run failed")
+  print("pickle run validated")
+
+  np.testing.assert_raises(AssertionError, np.testing.assert_array_equal, test_val[0], run_test(run_policy, seed=200)[0])
+  print("**** compile done ****")
 
 
 class ModelState:
