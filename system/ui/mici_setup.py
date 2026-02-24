@@ -106,7 +106,6 @@ class SetupState(IntEnum):
   START = 0
   SOFTWARE_SELECTION = 1
   DOWNLOADING = 2
-  DOWNLOAD_FAILED = 3
 
 
 class StartPage(Widget):
@@ -163,38 +162,6 @@ class SoftwareSelectionPage(Widget):
       rect.height / 2,
     )
     self._custom_software_slider.render(custom_software_rect)
-
-
-class TermsHeader(Widget):
-  def __init__(self, text: str, icon_texture: rl.Texture):
-    super().__init__()
-
-    self._title = UnifiedLabel(text, 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                               font_weight=FontWeight.BOLD, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
-                               line_height=0.8)
-    self._icon_texture = icon_texture
-
-    self.set_rect(rl.Rectangle(0, 0, gui_app.width - 16 * 2, self._icon_texture.height))
-
-  def set_title(self, text: str):
-    self._title.set_text(text)
-
-  def set_icon(self, icon_texture: rl.Texture):
-    self._icon_texture = icon_texture
-
-  def _render(self, _):
-    rl.draw_texture_ex(self._icon_texture, rl.Vector2(self._rect.x, self._rect.y),
-                       0.0, 1.0, rl.WHITE)
-
-    # May expand outside parent rect
-    title_content_height = self._title.get_content_height(int(self._rect.width - self._icon_texture.width - 16))
-    title_rect = rl.Rectangle(
-      self._rect.x + self._icon_texture.width + 16,
-      self._rect.y + (self._rect.height - title_content_height) / 2,
-      self._rect.width - self._icon_texture.width - 16,
-      title_content_height,
-    )
-    self._title.render(title_rect)
 
 
 class TermsPage(Widget):
@@ -317,11 +284,9 @@ class TermsPage(Widget):
 
 
 class CustomSoftwareWarningPage(NavWidget):
-  def __init__(self, continue_callback: Callable):#, back_callback: Callable):
+  def __init__(self, continue_callback: Callable, back_callback: Callable):
     super().__init__()
-    # super().__init__(continue_callback, back_callback)
-
-    self.set_back_callback(gui_app.pop_widget)
+    self.set_back_callback(back_callback)
 
     confirm_dialog = BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
                                              confirm_callback=continue_callback)
@@ -344,19 +309,6 @@ class CustomSoftwareWarningPage(NavWidget):
       self._continue_button,
       self._back_button,
     ])
-    return
-
-    self._title_header = TermsHeader("use caution installing\n3rd party software",
-                                     gui_app.texture("icons_mici/setup/warning.png", 66, 60))
-    self._body = UnifiedLabel("• It has not been tested by comma.\n" +
-                              "• It may not comply with relevant safety standards.\n" +
-                              "• It may cause damage to your device and/or vehicle.\n", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                              font_weight=FontWeight.ROMAN)
-
-    self._restore_header = TermsHeader("how to backup &\nrestore", gui_app.texture("icons_mici/setup/restore.png", 60, 60))
-    self._restore_body = UnifiedLabel("To restore your device to a factory state later, use https://flash.comma.ai",
-                                      36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                      font_weight=FontWeight.ROMAN)
 
   def hide_event(self):
     super().hide_event()
@@ -368,32 +320,6 @@ class CustomSoftwareWarningPage(NavWidget):
 
   def _render(self, _):
     self._scroller.render(self._rect)
-
-  # @property
-  # def _content_height(self):
-  #   return self._restore_body.rect.y + self._restore_body.rect.height - self._scroll_panel.get_offset()
-  #
-  # def _render_content(self, scroll_offset):
-  #   self._title_header.set_position(self._rect.x + 16, self._rect.y + 8 + scroll_offset)
-  #   self._title_header.render()
-  #
-  #   body_rect = rl.Rectangle(
-  #     self._rect.x + 8,
-  #     self._title_header.rect.y + self._title_header.rect.height + self.ITEM_SPACING,
-  #     self._rect.width - 50,
-  #     self._body.get_content_height(int(self._rect.width - 50)),
-  #   )
-  #   self._body.render(body_rect)
-  #
-  #   self._restore_header.set_position(self._rect.x + 16, self._body.rect.y + self._body.rect.height + self.ITEM_SPACING)
-  #   self._restore_header.render()
-  #
-  #   self._restore_body.render(rl.Rectangle(
-  #     self._rect.x + 8,
-  #     self._restore_header.rect.y + self._restore_header.rect.height + self.ITEM_SPACING,
-  #     self._rect.width - 50,
-  #     self._restore_body.get_content_height(int(self._rect.width - 50)),
-  #   ))
 
 
 class DownloadingPage(Widget):
@@ -426,9 +352,10 @@ class DownloadingPage(Widget):
     ))
 
 
-class FailedPage(Widget):
+class FailedPage(NavWidget):
   def __init__(self, reboot_callback: Callable, retry_callback: Callable, title: str = "download failed"):
     super().__init__()
+    self.set_back_callback(gui_app.pop_widget)
 
     self._title_label = UnifiedLabel(title, 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                      font_weight=FontWeight.DISPLAY)
@@ -440,7 +367,7 @@ class FailedPage(Widget):
     self._reboot_button.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._retry_button = WideRoundedButton("retry")
-    self._retry_button.set_click_callback(retry_callback)
+    self._retry_button.set_click_callback(gui_app.pop_widget)
     self._retry_button.set_enabled(lambda: self.enabled)  # for nav stack
 
   def set_reason(self, reason: str):
@@ -542,15 +469,16 @@ class BigPillButton(BigButton):
 
 
 class NetworkSetupPage(NavWidget):
-  def __init__(self, network_monitor: NetworkConnectivityMonitor, continue_callback: Callable):
+  def __init__(self, network_monitor: NetworkConnectivityMonitor, continue_callback: Callable, back_callback: Callable):
     super().__init__()
+    self.set_back_callback(back_callback)
+
     self._wifi_manager = WifiManager()
     self._wifi_manager.set_active(True)
     self._network_monitor = network_monitor
     self._custom_software = False
     self._prev_has_internet = False
     self._wifi_ui = WifiUIMici(self._wifi_manager)
-    self.set_back_callback(gui_app.pop_widget)
 
     self._connect_button = GreyBigButton("connect to\ninternet", "or swipe down to go back",
                                          gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True))
@@ -697,7 +625,7 @@ class Setup(Widget):
     self._start_page.set_click_callback(lambda: self._set_state(SetupState.SOFTWARE_SELECTION))
     self._start_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._network_setup_page = NetworkSetupPage(self._network_monitor, self._network_setup_continue_callback)
+    self._network_setup_page = NetworkSetupPage(self._network_monitor, self._network_setup_continue_callback, self._back_to_software_selection)
     # TODO: change these to touch_valid
     # self._network_setup_page.set_enabled(lambda: self.enabled)  # for nav stack
 
@@ -705,13 +633,17 @@ class Setup(Widget):
                                                           self._software_selection_custom_software_button_callback)
     self._software_selection_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._download_failed_page = FailedPage(HARDWARE.reboot, self._download_failed_startover_button_callback)
-    self._download_failed_page.set_enabled(lambda: self.enabled)  # for nav stack
+    self._download_failed_page = FailedPage(HARDWARE.reboot, lambda: self._set_state(SetupState.START))
 
-    self._custom_software_warning_page = CustomSoftwareWarningPage(lambda: self._push_network_setup(True))
+    self._custom_software_warning_page = CustomSoftwareWarningPage(lambda: self._push_network_setup(True), self._back_to_software_selection)
     # self._custom_software_warning_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._downloading_page = DownloadingPage()
+
+  def _back_to_software_selection(self):
+    # pop and reset sliders
+    gui_app.pop_widgets_to(self)
+    self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _update_state(self):
     pass
@@ -737,7 +669,7 @@ class Setup(Widget):
     # gui_app.set_modal_overlay(self._network_setup_page)
     gui_app.pop_widgets_to(self)
     gui_app.push_widget(self._network_setup_page)
-    self._set_state(SetupState.SOFTWARE_SELECTION)
+    # self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _render(self, rect: rl.Rectangle):
     # print('state', repr(self.state))
@@ -747,18 +679,12 @@ class Setup(Widget):
       self._software_selection_page.render(rect)
     elif self.state == SetupState.DOWNLOADING:
       self.render_downloading(rect)
-    elif self.state == SetupState.DOWNLOAD_FAILED:
-      self._download_failed_page.render(rect)
 
   def _software_selection_continue_button_callback(self):
     self.use_openpilot()
 
   def _software_selection_custom_software_button_callback(self):
     gui_app.push_widget(self._custom_software_warning_page)
-    self._set_state(SetupState.SOFTWARE_SELECTION)
-
-  def _download_failed_startover_button_callback(self):
-    self._set_state(SetupState.START)
 
   def _network_setup_continue_callback(self, custom_software: bool):
     if not custom_software:
@@ -876,7 +802,8 @@ class Setup(Widget):
     self.failed_url = url
     self.failed_reason = reason
     self._download_failed_page.set_reason(reason)
-    self._set_state(SetupState.DOWNLOAD_FAILED)
+    gui_app.push_widget(self._download_failed_page)
+    self._set_state(SetupState.START)
 
 
 def main():
