@@ -35,27 +35,6 @@ function install_ubuntu_deps() {
     exit 1
   fi
 
-  $SUDO apt-get update
-
-  # normal stuff, mostly for the bare docker image
-  $SUDO apt-get install -y --no-install-recommends \
-    ca-certificates \
-    build-essential \
-    curl \
-    libssl-dev \
-    libcurl4-openssl-dev \
-    locales \
-    git \
-    xvfb
-
-  $SUDO apt-get install -y --no-install-recommends \
-    python3-dev \
-    libgles2-mesa-dev \
-    libjpeg-dev \
-    libncurses5-dev \
-    libzstd-dev \
-    gettext
-
   if [[ -d "/etc/udev/rules.d/" ]]; then
     # Setup jungle udev rules
     $SUDO tee /etc/udev/rules.d/12-panda_jungle.rules > /dev/null <<EOF
