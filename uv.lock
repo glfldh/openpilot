@@ -570,6 +570,11 @@ wheels = [
 ]
 
 [[package]]
+name = "libjpeg"
+version = "3.1.0"
+source = { git = "https://github.com/commaai/dependencies.git?subdirectory=libjpeg&rev=vendor-libjpeg#af5255d10dce025803247d3b73f5c59e4310415e" }
+
+[[package]]
 name = "libusb1"
 version = "3.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -824,6 +829,7 @@ dependencies = [
     { name = "inputs" },
     { name = "jeepney" },
     { name = "json-rpc" },
+    { name = "libjpeg" },
     { name = "libusb1" },
     { name = "ncurses" },
     { name = "numpy" },
@@ -904,6 +910,7 @@ requires-dist = [
     { name = "jeepney" },
     { name = "jinja2", marker = "extra == 'docs'" },
     { name = "json-rpc" },
+    { name = "libjpeg", git = "https://github.com/commaai/dependencies.git?subdirectory=libjpeg&rev=vendor-libjpeg" },
     { name = "libusb1" },
     { name = "matplotlib", marker = "extra == 'dev'" },
     { name = "metadrive-simulator", marker = "platform_machine != 'aarch64' and extra == 'tools'", git = "https://github.com/commaai/metadrive.git?rev=minimal" },
