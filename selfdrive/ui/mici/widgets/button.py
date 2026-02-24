@@ -117,7 +117,7 @@ class BigButton(Widget):
 
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
     self._shake_start: float | None = None
-    self._press_animation_until: float | None = None
+    self._grow_animation_until: float | None = None
 
     self._rotate_icon_t: float | None = None
 
@@ -144,7 +144,7 @@ class BigButton(Widget):
     self._txt_disabled_bg = gui_app.texture("icons_mici/buttons/button_rectangle_disabled.png", 402, 180)
 
   def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
-    super().set_touch_valid_callback(lambda: touch_callback() and self._press_animation_until is None)
+    super().set_touch_valid_callback(lambda: touch_callback() and self._grow_animation_until is None)
 
   def _width_hint(self) -> int:
     # Single line if scrolling, so hide behind icon if exists
@@ -183,8 +183,8 @@ class BigButton(Widget):
   def trigger_shake(self):
     self._shake_start = rl.get_time()
 
-  def trigger_press_animation(self, duration: float = 0.65):
-    self._press_animation_until = rl.get_time() + duration
+  def trigger_grow_animation(self, duration: float = 0.65):
+    self._grow_animation_until = rl.get_time() + duration
 
   @property
   def _shake_offset(self) -> float:
@@ -199,6 +199,27 @@ class BigButton(Widget):
 
   def set_position(self, x: float, y: float) -> None:
     super().set_position(x + self._shake_offset, y)
+
+  def _handle_background(self) -> tuple[rl.Texture, float, float, float]:
+    if self._grow_animation_until is not None:
+      if rl.get_time() >= self._grow_animation_until:
+        self._grow_animation_until = None
+
+    # if self._grow_animation_until is not None and rl.get_time() >= self._grow_animation_until:
+    #   self._grow_animation_until = None
+    # show_pressed = self.is_pressed or (self._grow_animation_until is not None and rl.get_time() < self._grow_animation_until)
+
+    # draw _txt_default_bg
+    txt_bg = self._txt_default_bg
+    if not self.enabled:
+      txt_bg = self._txt_disabled_bg
+    elif self.is_pressed:
+      txt_bg = self._txt_pressed_bg
+
+    scale = self._scale_filter.update(PRESSED_SCALE if self.is_pressed or self._grow_animation_until is not None else 1.0)
+    btn_x = self._rect.x + (self._rect.width * (1 - scale)) / 2
+    btn_y = self._rect.y + (self._rect.height * (1 - scale)) / 2
+    return txt_bg, btn_x, btn_y, scale
 
   def _draw_content(self, btn_y: float):
     # LABEL ------------------------------------------------------------------
@@ -232,27 +253,7 @@ class BigButton(Widget):
       rl.draw_texture_pro(self._txt_icon, source_rec, dest_rec, origin, rotation, rl.Color(255, 255, 255, int(255 * 0.9)))
 
   def _render(self, _):
-    show_pressed = self.is_pressed
-    if self._press_animation_until is not None:
-      if rl.get_time() >= self._press_animation_until:
-        self._press_animation_until = None
-      else:
-        show_pressed = True
-
-    # if self._press_animation_until is not None and rl.get_time() >= self._press_animation_until:
-    #   self._press_animation_until = None
-    # show_pressed = self.is_pressed or (self._press_animation_until is not None and rl.get_time() < self._press_animation_until)
-
-    # draw _txt_default_bg
-    txt_bg = self._txt_default_bg
-    if not self.enabled:
-      txt_bg = self._txt_disabled_bg
-    elif show_pressed:
-      txt_bg = self._txt_pressed_bg
-
-    scale = self._scale_filter.update(PRESSED_SCALE if show_pressed else 1.0)
-    btn_x = self._rect.x + (self._rect.width * (1 - scale)) / 2
-    btn_y = self._rect.y + (self._rect.height * (1 - scale)) / 2
+    txt_bg, btn_x, btn_y, scale = self._handle_background()
 
     if self._scroll:
       # draw black background since images are transparent

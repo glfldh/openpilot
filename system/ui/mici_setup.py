@@ -502,9 +502,10 @@ class GreyBigButton(BigButton):
 
 
 class BigPillButton(BigButton):
-  def __init__(self, *args, green: bool = False, **kwargs):
+  def __init__(self, *args, green: bool = False, disabled_background: bool = False, **kwargs):
     # special button with new custom bg_txt. only big label, no icon. center h and v aligned label
     self._green = green
+    self._disabled_background = disabled_background
     super().__init__(*args, **kwargs)
 
     self._label.set_font_size(48)
@@ -523,10 +524,12 @@ class BigPillButton(BigButton):
   # def enabled(self):
   #   return False
 
-  def _render(self, _):
-    # self.set_enabled(False)
-    super()._render(_)
-    # self.set_enabled(True)
+  def _handle_background(self) -> tuple[rl.Texture, float, float, float]:
+    txt_bg, btn_x, btn_y, scale = super()._handle_background()
+
+    if self._disabled_background:
+      txt_bg = self._txt_disabled_bg
+    return txt_bg, btn_x, btn_y, scale
 
   def _load_images(self):
     if self._green:
@@ -556,7 +559,7 @@ class NetworkSetupPage(NavWidget):
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
 
     self._pending_has_internet_scroll = None
-    self._pending_press_animation = False
+    self._pending_grow_animation = False
     self._pending_shake = False
 
     def on_waiting_click():
@@ -569,7 +572,7 @@ class NetworkSetupPage(NavWidget):
       #   gui_app.pop_widget()
       continue_callback(self._custom_software)
 
-    self._waiting_button = BigPillButton("waiting for\ninternet...")
+    self._waiting_button = BigPillButton("waiting for\ninternet...", disabled_background=True)
     self._waiting_button.set_click_callback(on_waiting_click)
     self._continue_button = BigPillButton("install openpilot", green=True)
     self._continue_button.set_click_callback(on_continue_click)
@@ -617,19 +620,19 @@ class NetworkSetupPage(NavWidget):
     #   end_offset = -(self._scroller.content_size - self._rect.width)
     #   remaining = self._scroller.scroll_panel.get_offset() - end_offset
     #   self._scroller.scroll_to(remaining, smooth=True, block=True)
-    #   self._pending_press_animation = True
+    #   self._pending_grow_animation = True
     #
     #   self._prev_has_internet = has_internet
 
   def _update_state(self):
     super()._update_state()
 
-    if self._pending_press_animation:
+    if self._pending_grow_animation:
       btn_right = self._continue_button.rect.x + self._continue_button.rect.width
       visible_right = self._rect.x + self._rect.width
       if btn_right < visible_right + 50:
-        self._pending_press_animation = False
-        self._continue_button.trigger_press_animation()
+        self._pending_grow_animation = False
+        self._continue_button.trigger_grow_animation()
 
     if self._pending_shake and abs(self._wifi_button.rect.x - ITEM_SPACING) < 50:
       self._pending_shake = False
@@ -650,13 +653,14 @@ class NetworkSetupPage(NavWidget):
     # print('content', self._scroller.content_size, 'rect', self._rect.width)
     print('offset', self._scroller.scroll_panel.get_offset())
 
+    # This intentionally doesn't trigger pop when in keyboard or forget dialog
     has_internet = self._network_monitor.network_connected.is_set()
     if has_internet and not self._prev_has_internet:  # and gui_app.get_active_widget() == self:
       self._pending_has_internet_scroll = rl.get_time()
+    self._prev_has_internet = has_internet
 
     print('offset', self._scroller.scroll_panel.get_offset(), has_internet)
 
-    self._prev_has_internet = has_internet
 
     if self._pending_has_internet_scroll is not None:
       elapsed = rl.get_time() - self._pending_has_internet_scroll
@@ -670,7 +674,7 @@ class NetworkSetupPage(NavWidget):
         end_offset = -(self._scroller.content_size - self._rect.width)
         remaining = self._scroller.scroll_panel.get_offset() - end_offset
         self._scroller.scroll_to(remaining, smooth=True, block=True)
-        self._pending_press_animation = True
+        self._pending_grow_animation = True
 
   def _render(self, _):
     self._scroller.render(self._rect)
