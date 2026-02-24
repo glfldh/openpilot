@@ -631,7 +631,6 @@ class NetworkSetupPage(NavWidget):
       # else:
       #   self._waiting_button.set_visible(False)
 
-    self._scroller._layout()
     # print('content', self._scroller.content_size, 'rect', self._rect.width)
     print('offset', self._scroller.scroll_panel.get_offset())
 
@@ -649,9 +648,11 @@ class NetworkSetupPage(NavWidget):
         self._pending_has_internet_scroll = None
         print('SCROLLING OVER')
         gui_app.pop_widgets_to(self)
+
+        # ensure layout is up to date for scroll_to
+        self._scroller._layout()
         end_offset = -(self._scroller.content_size - self._rect.width)
         remaining = self._scroller.scroll_panel.get_offset() - end_offset
-
         self._scroller.scroll_to(remaining, smooth=True, block=True)
         self._pending_press_animation = True
 
