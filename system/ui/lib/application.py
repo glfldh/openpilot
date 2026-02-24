@@ -569,6 +569,10 @@ class GuiApplication:
         # Only render top widgets
         for widget in self._nav_stack[-self._nav_stack_widgets_to_render:]:
           widget.render(rl.Rectangle(0, 0, self.width, self.height))
+        rl.rl_set_blend_mode(rl.BlendMode.BLEND_MULTIPLIED)
+        rl.draw_rectangle_rec(rl.Rectangle(0, 0, self.width, self.height),
+                              rl.Color(100, 50, 0, int(255 * 0.1)))
+        rl.rl_set_blend_mode(rl.BlendMode.BLEND_ALPHA)
 
         yield True
 
