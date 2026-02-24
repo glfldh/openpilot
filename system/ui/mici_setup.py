@@ -321,7 +321,7 @@ class CustomSoftwareWarningPage(NavWidget):
 
     def show_confirm_dialog():
       gui_app.push_widget(BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
-                                                                      confirm_callback=continue_callback))
+                                                  confirm_callback=continue_callback))
 
     self._continue_button = BigCircleButton("icons_mici/setup/driver_monitoring/dm_check.png")
     self._continue_button.set_click_callback(show_confirm_dialog)
@@ -439,7 +439,8 @@ class FailedPage(NavWidget):
 
 class GreyBigButton(BigButton):
   """Users should manage newlines with this class themselves"""
-  def __init__(self, *args, wide: bool = False, **kwargs,):
+
+  def __init__(self, *args, wide: bool = False, **kwargs):
     super().__init__(*args, **kwargs)
     self.set_touch_valid_callback(lambda: False)
 
