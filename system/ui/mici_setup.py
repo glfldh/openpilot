@@ -88,7 +88,7 @@ class NetworkConnectivityMonitor:
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
           urllib.request.urlopen(request, timeout=2.0)
-          time.sleep(3)
+          # time.sleep(3)
           self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
             self.wifi_connected.set()
@@ -319,15 +319,18 @@ class CustomSoftwareWarningPage(NavWidget):
     super().__init__()
     self.set_back_callback(back_callback)
 
-    confirm_dialog = BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
-                                             confirm_callback=continue_callback)
-    self._continue_button = BigCircleButton("icons_mici/setup/driver_monitoring/dm_check.png")
-    self._continue_button.set_click_callback(lambda: gui_app.push_widget(BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
-                                             confirm_callback=continue_callback)))
+    def show_confirm_dialog():
+      gui_app.push_widget(BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
+                                                                      confirm_callback=continue_callback))
 
-    back_dialog = BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)
+    self._continue_button = BigCircleButton("icons_mici/setup/driver_monitoring/dm_check.png")
+    self._continue_button.set_click_callback(show_confirm_dialog)
+
+    def show_back_dialog():
+      gui_app.push_widget(BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=back_callback))
+
     self._back_button = BigCircleButton("icons_mici/setup/cancel.png")
-    self._back_button.set_click_callback(lambda: gui_app.push_widget(BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)))
+    self._back_button.set_click_callback(show_back_dialog)
 
     self._scroller = Scroller([
       GreyBigButton("use caution", "you are installing\n3rd party software",
