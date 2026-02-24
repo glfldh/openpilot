@@ -512,7 +512,7 @@ def main(demo=False):
       alert_msg.valid = True
       alert_msg.alertDebug.alertText1 = f"Model loaded in {model_execution_time:.0f}s"
       pm.send('alertDebug', alert_msg)
-    print(f"Model execution time: {model_execution_time*1e3:.2f} ms")
+    # print(f"Model execution time: {model_execution_time*1e3:.2f} ms")
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')
