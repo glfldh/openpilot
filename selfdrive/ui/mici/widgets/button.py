@@ -1,3 +1,4 @@
+import math
 import pyray as rl
 from typing import Union
 from enum import Enum
@@ -116,6 +117,7 @@ class BigButton(Widget):
 
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
     self._press_flash_until: float = 0.0
+    self._shake_start: float | None = None
 
     self._rotate_icon_t: float | None = None
 
@@ -175,9 +177,26 @@ class BigButton(Widget):
   def get_text(self):
     return self.text
 
-  def trigger_press_flash(self, duration: float = 0.15):
+  def trigger_press_flash(self, duration: float = 0.65):
     """Briefly show the pressed state so the button appears to have been pressed."""
     self._press_flash_until = rl.get_time() + duration
+
+  def trigger_shake(self):
+    self._shake_start = rl.get_time()
+
+  @property
+  def _shake_offset(self) -> float:
+    SHAKE_DURATION = 0.5
+    SHAKE_AMPLITUDE = 24.0
+    SHAKE_FREQUENCY = 32.0
+    t = rl.get_time() - (self._shake_start or 0.0)
+    if t > SHAKE_DURATION:
+      return 0.0
+    decay = 1.0 - t / SHAKE_DURATION
+    return decay * SHAKE_AMPLITUDE * math.sin(t * SHAKE_FREQUENCY)
+
+  def set_position(self, x: float, y: float) -> None:
+    super().set_position(x + self._shake_offset, y)
 
   # def _draw_background(self):
 

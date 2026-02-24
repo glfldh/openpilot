@@ -141,8 +141,6 @@ class SmallSlider(Widget):
       self._label.render(label_rect)
 
     # circle and arrow
-    # draw black circle behind since img can be transparent
-    rl.draw_circle()
     circle_bg_txt = self._circle_bg_pressed_txt if self._is_dragging_circle or self._confirmed_time > 0 else self._circle_bg_txt
     rl.draw_texture_ex(circle_bg_txt, rl.Vector2(btn_x, btn_y), 0.0, 1.0, white)
 

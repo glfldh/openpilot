@@ -564,7 +564,7 @@ class GuiApplication:
         if self._nav_stack_tick is not None:
           self._nav_stack_tick()
 
-        print([type(w).__name__ for w in self._nav_stack])
+        # print([type(w).__name__ for w in self._nav_stack])
 
         # Only render top widgets
         for widget in self._nav_stack[-self._nav_stack_widgets_to_render:]:
