@@ -101,12 +101,15 @@ jobs:
         submodules: true
     - uses: ./.github/workflows/setup-with-retry
       id: setup-step
+    - name: Build raylib (offscreen)
+      run: third_party/raylib/build.sh
     - name: Build openpilot
       run: scons -j$(nproc)
     - name: Run unit tests
       timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 20 }}
+      env:
+        LIBGL_ALWAYS_SOFTWARE: "1"
       run: |
-        source selfdrive/test/setup_xvfb.sh
         # Pre-compile Python bytecode so each pytest worker doesn't need to
         pytest --collect-only -m 'not slow' -qq
         MAX_EXAMPLES=1 pytest -m 'not slow'
@@ -189,12 +192,15 @@ jobs:
         submodules: true
     - uses: ./.github/workflows/setup-with-retry
       id: setup-step
+    - name: Build raylib (offscreen)
+      run: third_party/raylib/build.sh
     - name: Build openpilot
       run: scons -j$(nproc)
     - name: Driving test
       timeout-minutes: ${{ (steps.setup-step.outputs.duration < 18) && 1 || 2 }}
+      env:
+        LIBGL_ALWAYS_SOFTWARE: "1"
       run: |
-        source selfdrive/test/setup_xvfb.sh
         pytest -s tools/sim/tests/test_metadrive_bridge.py
 
   create_ui_report:
@@ -210,11 +216,14 @@ jobs:
         with:
           submodules: true
       - uses: ./.github/workflows/setup-with-retry
+      - name: Build raylib (offscreen)
+        run: third_party/raylib/build.sh
       - name: Build openpilot
         run: scons -j$(nproc)
       - name: Create UI Report
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
-          source selfdrive/test/setup_xvfb.sh
           python3 selfdrive/ui/tests/diff/replay.py
           python3 selfdrive/ui/tests/diff/replay.py --big
       - name: Upload UI Report

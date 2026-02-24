@@ -45,12 +45,13 @@ function install_ubuntu_deps() {
     libssl-dev \
     libcurl4-openssl-dev \
     locales \
-    git \
-    xvfb
+    git
 
   $SUDO apt-get install -y --no-install-recommends \
     python3-dev \
     libgles2-mesa-dev \
+    libegl-dev \
+    libgl-dev \
     libjpeg-dev \
     libncurses5-dev \
     libzstd-dev \

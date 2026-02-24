@@ -25,12 +25,20 @@ if [ -f /TICI ]; then
   ARCHNAME="larch64"
   RAYLIB_PLATFORM="PLATFORM_COMMA"
 elif [[ "$OSTYPE" == "linux"* ]]; then
-  # required dependencies on Linux PC
-  $SUDO apt install \
-    libxcursor-dev \
-    libxi-dev \
-    libxinerama-dev \
-    libxrandr-dev
+  if [[ -n "${CI:-}" ]]; then
+    # CI: use offscreen EGL surfaceless platform (no X11/Xvfb needed)
+    RAYLIB_PLATFORM="PLATFORM_OFFSCREEN"
+    $SUDO apt-get install -y --no-install-recommends \
+      libegl-dev \
+      libgl-dev
+  else
+    # Desktop: use GLFW with X11
+    $SUDO apt install \
+      libxcursor-dev \
+      libxi-dev \
+      libxinerama-dev \
+      libxrandr-dev
+  fi
 fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -51,7 +59,7 @@ fi
 
 cd raylib_repo
 
-COMMIT=${1:-3425bd9d1fb292ede4d80f97a1f4f258f614cffc}
+COMMIT=${1:-86c6eca3b224cb66874d6d8f16ba0916beb31ba6}
 git fetch origin $COMMIT
 git reset --hard $COMMIT
 git clean -xdff .

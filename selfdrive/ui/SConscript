@@ -41,6 +41,8 @@ if GetOption('extras'):
     raylib_libs = common + ["raylib"]
     if arch == "larch64":
       raylib_libs += ["GLESv2", "EGL", "gbm", "drm"]
+    elif os.environ.get("CI"):
+      raylib_libs += ["EGL", "GL"]
     else:
       raylib_libs += ["GL"]
 
