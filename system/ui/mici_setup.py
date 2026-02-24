@@ -334,12 +334,13 @@ class CustomSoftwareWarningPage(NavWidget):
 
     self._scroller = Scroller([
       GreyBigButton("use caution", "you are installing\n3rd party software",
-                    gui_app.texture("icons_mici/setup/warning.png", 64, 58)),
-      GreyBigButton("", "• It has not been tested by comma.\n\n" +
+                    gui_app.texture("icons_mici/setup/warning.png", 64, 58), wide=True),
+      GreyBigButton("", "• It has not been tested by comma.\n" +
                     "• It may not comply with\n relevant safety standards.", wide=True),
-      GreyBigButton("", "• It may cause damage to your\ndevice and/or vehicle.\n\n\n", wide=True),
-      GreyBigButton("", "To restore your\ndevice to a factory\nstate later, go to\n\nhttps://flash.comma.ai",
-                    gui_app.texture("icons_mici/setup/restore.png", 64, 64)),
+      GreyBigButton("", "• It may cause damage to your device and/or vehicle.\n" +
+                    "• You are fully responsible for your device.", wide=True),
+      GreyBigButton("how to restore to a\nfactory state later", "https://flash.comma.ai",
+                    gui_app.texture("icons_mici/setup/restore.png", 64, 64), wide=True),
       self._continue_button,
       self._back_button,
     ])
@@ -444,16 +445,20 @@ class GreyBigButton(BigButton):
     super().__init__(*args, **kwargs)
     self.set_touch_valid_callback(lambda: False)
 
+    wide = True
+
     if wide:
       self._rect.width = 476
 
     self._label.set_font_size(36)
-    self._label.set_font_weight(FontWeight.DISPLAY_REGULAR)
+    self._label.set_font_weight(FontWeight.BOLD)
     self._label.set_line_height(1.0)
 
-    self._sub_label.set_font_size(28)
+    self._sub_label.set_font_size(32)
     self._sub_label.set_text_color(rl.Color(255, 255, 255, int(255 * 0.9)))
     self._sub_label.set_font_weight(FontWeight.DISPLAY_REGULAR)
+    self._sub_label.set_alignment_vertical(rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE if not self._label.text else
+                                           rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
     self._sub_label.set_line_height(0.9)
 
   def _width_hint(self) -> int:
