@@ -27,10 +27,8 @@ if [ -f /TICI ]; then
 elif [[ "$OSTYPE" == "linux"* ]]; then
   if [[ -n "${CI:-}" ]]; then
     # CI: use offscreen EGL surfaceless platform (no X11/Xvfb needed)
+    # libegl-dev and libgl-dev are already installed by setup_dependencies.sh
     RAYLIB_PLATFORM="PLATFORM_OFFSCREEN"
-    $SUDO apt-get install -y --no-install-recommends \
-      libegl-dev \
-      libgl-dev
   else
     # Desktop: use GLFW with X11
     $SUDO apt install \
