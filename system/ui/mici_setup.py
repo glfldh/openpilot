@@ -552,7 +552,6 @@ class NetworkSetupPage(NavWidget):
     self._waiting_button.set_click_callback(on_waiting_click)
     self._continue_button = BigPillButton("continue", green=True)
     self._continue_button.set_click_callback(on_continue_click)
-    self._continue_button.set_visible(False)
 
     self._scroller = Scroller([
       self._connect_button,
@@ -605,10 +604,12 @@ class NetworkSetupPage(NavWidget):
       self._waiting_button.set_visible(False)
     else:
       self._continue_button.set_visible(False)
-      if self._wifi_manager.wifi_state.ssid:
-        self._waiting_button.set_visible(True)
-      else:
-        self._waiting_button.set_visible(False)
+      self._waiting_button.set_visible(True)
+      # self._continue_button.set_visible(False)
+      # if self._wifi_manager.wifi_state.ssid:
+      #   self._waiting_button.set_visible(True)
+      # else:
+      #   self._waiting_button.set_visible(False)
 
   def _render(self, _):
     self._scroller.render(self._rect)
