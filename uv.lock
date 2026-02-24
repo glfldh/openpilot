@@ -834,7 +834,7 @@ dependencies = [
     { name = "ncurses" },
     { name = "numpy" },
     { name = "onnx" },
-    { name = "openssl" },
+    { name = "openssl3" },
     { name = "psutil" },
     { name = "pycapnp" },
     { name = "pycryptodome" },
@@ -920,7 +920,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "onnx", specifier = ">=1.14.0" },
     { name = "opencv-python-headless", marker = "extra == 'dev'" },
-    { name = "openssl", git = "https://github.com/commaai/dependencies.git?subdirectory=openssl&rev=vendor-openssl" },
+    { name = "openssl3", git = "https://github.com/commaai/dependencies.git?subdirectory=openssl3&rev=fix-openssl-name" },
     { name = "pre-commit-hooks", marker = "extra == 'testing'" },
     { name = "psutil" },
     { name = "pycapnp" },
@@ -957,9 +957,9 @@ requires-dist = [
 provides-extras = ["docs", "testing", "dev", "tools"]
 
 [[package]]
-name = "openssl"
+name = "openssl3"
 version = "3.4.1"
-source = { git = "https://github.com/commaai/dependencies.git?subdirectory=openssl&rev=vendor-openssl#6aa4f4385689c4a342b10b15849922d8fe4a1df7" }
+source = { git = "https://github.com/commaai/dependencies.git?subdirectory=openssl3&rev=fix-openssl-name#b774c1a51b2dd3f444a9cc7b701e7c8e6b51ae4b" }
 
 [[package]]
 name = "packaging"
