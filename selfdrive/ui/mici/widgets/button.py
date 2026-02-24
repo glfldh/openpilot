@@ -205,10 +205,6 @@ class BigButton(Widget):
       if rl.get_time() >= self._grow_animation_until:
         self._grow_animation_until = None
 
-    # if self._grow_animation_until is not None and rl.get_time() >= self._grow_animation_until:
-    #   self._grow_animation_until = None
-    # show_pressed = self.is_pressed or (self._grow_animation_until is not None and rl.get_time() < self._grow_animation_until)
-
     # draw _txt_default_bg
     txt_bg = self._txt_default_bg
     if not self.enabled:
@@ -230,13 +226,11 @@ class BigButton(Widget):
     label_rect = rl.Rectangle(label_x, btn_y + LABEL_VERTICAL_PADDING, self._width_hint(),
                               self._rect.height - LABEL_VERTICAL_PADDING * 2)
     self._label.render(label_rect)
-    # rl.draw_rectangle_lines_ex(label_rect, 1, rl.RED)
 
     if self.value:
       label_y = btn_y + self._rect.height - LABEL_VERTICAL_PADDING
       sub_label_height = self._sub_label.get_content_height(self._width_hint())
       sub_label_rect = rl.Rectangle(label_x, label_y - sub_label_height, self._width_hint(), sub_label_height)
-      # rl.draw_rectangle_lines_ex(sub_label_rect, 1, rl.BLUE)
       self._sub_label.render(sub_label_rect)
 
     # ICON -------------------------------------------------------------------

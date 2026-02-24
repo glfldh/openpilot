@@ -173,7 +173,6 @@ class Scroller(Widget):
       self._scrolling_to = None, False
 
     if self._scrolling_to[0] is not None and len(self._pending_lift) == 0:
-      print('scrolling to target', self._scrolling_to[0], 'filter is at', self._scrolling_to_filter.x)
       self._scrolling_to_filter.update(self._scrolling_to[0])
       self.scroll_panel.set_offset(self._scrolling_to_filter.x)
 
@@ -290,7 +289,6 @@ class Scroller(Widget):
 
   def _layout(self):
     self._visible_items = [item for item in self._items if item.is_visible]
-    # print('visible items:', [item.__class__.__name__ for item in self._visible_items])
 
     self._content_size = sum(item.rect.width if self._horizontal else item.rect.height for item in self._visible_items)
     self._content_size += self._spacing * (len(self._visible_items) - 1)
@@ -396,7 +394,6 @@ class Scroller(Widget):
   def show_event(self):
     super().show_event()
     if self._reset_scroll_at_show:
-      print('resetting scroll at show')
       self.scroll_panel.set_offset(0.0)
 
     for item in self._items:

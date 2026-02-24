@@ -466,7 +466,6 @@ class GreyBigButton(BigButton):
 
 class BigPillButton(BigButton):
   def __init__(self, *args, green: bool = False, disabled_background: bool = False, **kwargs):
-    # special button with new custom bg_txt. only big label, no icon. center h and v aligned label
     self._green = green
     self._disabled_background = disabled_background
     super().__init__(*args, **kwargs)
@@ -481,11 +480,8 @@ class BigPillButton(BigButton):
       self._load_images()
 
   def _update_label_layout(self):
+    # Don't change label text size
     pass
-
-  # @property
-  # def enabled(self):
-  #   return False
 
   def _handle_background(self) -> tuple[rl.Texture, float, float, float]:
     txt_bg, btn_x, btn_y, scale = super()._handle_background()
@@ -608,14 +604,9 @@ class NetworkSetupPage(NavWidget):
     else:
       self._continue_button.set_visible(False)
       self._waiting_button.set_visible(True)
-      # self._continue_button.set_visible(False)
-      # if self._wifi_manager.wifi_state.ssid:
-      #   self._waiting_button.set_visible(True)
-      # else:
-      #   self._waiting_button.set_visible(False)
 
     # print('content', self._scroller.content_size, 'rect', self._rect.width)
-    print('offset', self._scroller.scroll_panel.get_offset())
+    # print('offset', self._scroller.scroll_panel.get_offset())
 
     # This intentionally doesn't trigger pop when in keyboard or forget dialog
     has_internet = self._network_monitor.network_connected.is_set()
@@ -623,13 +614,13 @@ class NetworkSetupPage(NavWidget):
       self._pending_has_internet_scroll = rl.get_time()
     self._prev_has_internet = has_internet
 
-    print('offset', self._scroller.scroll_panel.get_offset(), has_internet)
+    # print('offset', self._scroller.scroll_panel.get_offset(), has_internet)
 
     if self._pending_has_internet_scroll is not None:
       elapsed = rl.get_time() - self._pending_has_internet_scroll
       if elapsed > 0.5:
         self._pending_has_internet_scroll = None
-        print('SCROLLING OVER')
+        # print('SCROLLING OVER')
         gui_app.pop_widgets_to(self)
 
         # ensure layout is up to date for scroll_to
