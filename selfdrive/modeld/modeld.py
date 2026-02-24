@@ -389,7 +389,7 @@ def main(demo=False):
     cloudlog.warning(f"connected extra cam with buffer size: {vipc_client_extra.buffer_len} ({vipc_client_extra.width} x {vipc_client_extra.height})")
 
   # messaging
-  pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "alertDebug"])
+  pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry"])
   sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay"])
 
   publish_state = PublishState()
@@ -495,23 +495,10 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
     }
 
-    if model.run_policy is None:
-      alert_msg = messaging.new_message('alertDebug')
-      alert_msg.valid = True
-      alert_msg.alertDebug.alertText1 = "Loading model..."
-      pm.send('alertDebug', alert_msg)
-
     mt1 = time.perf_counter()
     model_output = model.run(bufs, transforms, inputs, prepare_only)
     mt2 = time.perf_counter()
-
     model_execution_time = mt2 - mt1
-
-    if model.run_policy is not None and run_count == 0:
-      alert_msg = messaging.new_message('alertDebug')
-      alert_msg.valid = True
-      alert_msg.alertDebug.alertText1 = f"Model loaded in {model_execution_time:.0f}s"
-      pm.send('alertDebug', alert_msg)
     # print(f"Model execution time: {model_execution_time*1e3:.2f} ms")
 
     if model_output is not None:
