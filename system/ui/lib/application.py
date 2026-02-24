@@ -569,10 +569,6 @@ class GuiApplication:
         # Only render top widgets
         for widget in self._nav_stack[-self._nav_stack_widgets_to_render:]:
           widget.render(rl.Rectangle(0, 0, self.width, self.height))
-        rl.rl_set_blend_mode(rl.BlendMode.BLEND_MULTIPLIED)
-        rl.draw_rectangle_rec(rl.Rectangle(0, 0, self.width, self.height),
-                              rl.Color(100, 50, 0, int(255 * 0.1)))
-        rl.rl_set_blend_mode(rl.BlendMode.BLEND_ALPHA)
 
         yield True
 
@@ -781,11 +777,11 @@ class GuiApplication:
 
   @staticmethod
   def _default_width() -> int:
-    return 2160 if GuiApplication.big_ui() else 536
+    return 2160 if GuiApplication.big_ui() else 536 # * 2
 
   @staticmethod
   def _default_height() -> int:
-    return 1080 if GuiApplication.big_ui() else 240
+    return 1080 if GuiApplication.big_ui() else 240 # * 2
 
   @staticmethod
   def big_ui() -> bool:

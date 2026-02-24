@@ -79,7 +79,7 @@ class Scroller(Widget):
     self._reset_scroll_at_show = True
 
     self._scrolling_to: tuple[float | None, bool] = (None, False)  # target offset, block user scrolling
-    self._scroll_filter = FirstOrderFilter(0.0, SCROLL_RC, 1 / gui_app.target_fps)
+    self._scrolling_to_filter = FirstOrderFilter(0.0, SCROLL_RC, 1 / gui_app.target_fps)
     self._zoom_filter = FirstOrderFilter(1.0, 0.2, 1 / gui_app.target_fps)
     self._zoom_out_t: float = 0.0
 
@@ -125,6 +125,7 @@ class Scroller(Widget):
     # FIXME: the padding correction doesn't seem correct
     scroll_offset = self.scroll_panel.get_offset() - pos
     if smooth:
+      self._scrolling_to_filter.x = self.scroll_panel.get_offset()
       self._scrolling_to = scroll_offset, block
     else:
       self.scroll_panel.set_offset(scroll_offset)
@@ -172,15 +173,17 @@ class Scroller(Widget):
       self._scrolling_to = None, False
 
     if self._scrolling_to[0] is not None and len(self._pending_lift) == 0:
-      self._scroll_filter.update(self._scrolling_to[0])
-      self.scroll_panel.set_offset(self._scroll_filter.x)
+      print('scrolling to target', self._scrolling_to[0], 'filter is at', self._scrolling_to_filter.x)
+      self._scrolling_to_filter.update(self._scrolling_to[0])
+      self.scroll_panel.set_offset(self._scrolling_to_filter.x)
 
-      if abs(self._scroll_filter.x - self._scrolling_to[0]) < 1:
+      if abs(self._scrolling_to_filter.x - self._scrolling_to[0]) < 1:
         self.scroll_panel.set_offset(self._scrolling_to[0])
         self._scrolling_to = None, False
     else:
+      print('RESETTING SCROLL SOURCE')
       # keep current scroll position up to date
-      self._scroll_filter.x = self.scroll_panel.get_offset()
+      self._scrolling_to_filter.x = self.scroll_panel.get_offset()
 
   def _get_scroll(self, visible_items: list[Widget], content_size: float) -> float:
     scroll_enabled = self._scroll_enabled() if callable(self._scroll_enabled) else self._scroll_enabled
@@ -291,6 +294,7 @@ class Scroller(Widget):
 
   def _layout(self):
     self._visible_items = [item for item in self._items if item.is_visible]
+    # print('visible items:', [item.__class__.__name__ for item in self._visible_items])
 
     self._content_size = sum(item.rect.width if self._horizontal else item.rect.height for item in self._visible_items)
     self._content_size += self._spacing * (len(self._visible_items) - 1)
@@ -396,6 +400,7 @@ class Scroller(Widget):
   def show_event(self):
     super().show_event()
     if self._reset_scroll_at_show:
+      print('resetting scroll at show')
       self.scroll_panel.set_offset(0.0)
 
     for item in self._items:
@@ -408,5 +413,7 @@ class Scroller(Widget):
     self._move_lift.clear()
     self._pending_lift.clear()
     self._pending_move.clear()
+    self._scrolling_to = None, False
+    self._scrolling_to_filter.x = 0.0
     for item in self._items:
       item.hide_event()

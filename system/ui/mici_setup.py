@@ -89,7 +89,7 @@ class NetworkConnectivityMonitor:
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
           urllib.request.urlopen(request, timeout=1.0)
-          time.sleep(5)
+          # time.sleep(3)
           self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
             self.wifi_connected.set()
@@ -357,6 +357,14 @@ class CustomSoftwareWarningPage(NavWidget):
                                       36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                       font_weight=FontWeight.ROMAN)
 
+  def hide_event(self):
+    super().hide_event()
+    self._scroller.hide_event()
+
+  def show_event(self):
+    super().show_event()
+    self._scroller.show_event()
+
   def _render(self, _):
     self._scroller.render(self._rect)
 
@@ -538,6 +546,7 @@ class NetworkSetupPage(NavWidget):
     self._wifi_button = WifiNetworkButton(self._wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
 
+    self._pending_has_internet_scroll = None
     self._pending_press_animation = False
     self._pending_shake = False
 
@@ -563,7 +572,7 @@ class NetworkSetupPage(NavWidget):
     ])
 
     # set up position for invisible items so that scroll_to works
-    self._scroller._layout()
+    # self._scroller._layout()
 
     gui_app.set_nav_stack_tick(self._nav_stack_tick)
 
@@ -573,22 +582,31 @@ class NetworkSetupPage(NavWidget):
   def show_event(self):
     super().show_event()
     self._scroller.show_event()
+    self._prev_has_internet = False
+    print('SHOW EVENT')
+    # self._network_monitor.reset()
+
+  def hide_event(self):
+    super().hide_event()
+    self._scroller.hide_event()
 
   def _nav_stack_tick(self):
     self._wifi_manager.process_callbacks()
 
-    has_internet = self._network_monitor.network_connected.is_set()
-    if has_internet and not self._prev_has_internet:
-      gui_app.pop_widgets_to(self)
-      end_offset = -(self._scroller.content_size - self._rect.width)
-      remaining = self._scroller.scroll_panel.get_offset() - end_offset
-      self._scroller.scroll_to(remaining, smooth=True, block=True)
-      self._pending_press_animation = True
-
-    self._prev_has_internet = has_internet
+    # has_internet = self._network_monitor.network_connected.is_set()
+    # if has_internet and not self._prev_has_internet and gui_app.get_active_widget() == self:
+    #   gui_app.pop_widgets_to(self)
+    #   end_offset = -(self._scroller.content_size - self._rect.width)
+    #   remaining = self._scroller.scroll_panel.get_offset() - end_offset
+    #   self._scroller.scroll_to(remaining, smooth=True, block=True)
+    #   self._pending_press_animation = True
+    #
+    #   self._prev_has_internet = has_internet
 
   def _update_state(self):
     super()._update_state()
+
+
 
     if self._pending_press_animation:
       btn_right = self._continue_button.rect.x + self._continue_button.rect.width
@@ -612,6 +630,30 @@ class NetworkSetupPage(NavWidget):
       #   self._waiting_button.set_visible(True)
       # else:
       #   self._waiting_button.set_visible(False)
+
+    self._scroller._layout()
+    # print('content', self._scroller.content_size, 'rect', self._rect.width)
+    print('offset', self._scroller.scroll_panel.get_offset())
+
+    has_internet = self._network_monitor.network_connected.is_set()
+    if has_internet and not self._prev_has_internet:  # and gui_app.get_active_widget() == self:
+      self._pending_has_internet_scroll = rl.get_time()
+
+    print('offset', self._scroller.scroll_panel.get_offset(), has_internet)
+
+    self._prev_has_internet = has_internet
+
+    if self._pending_has_internet_scroll is not None:
+      elapsed = rl.get_time() - self._pending_has_internet_scroll
+      if elapsed > 0.5:
+        self._pending_has_internet_scroll = None
+        print('SCROLLING OVER')
+        gui_app.pop_widgets_to(self)
+        end_offset = -(self._scroller.content_size - self._rect.width)
+        remaining = self._scroller.scroll_panel.get_offset() - end_offset
+
+        self._scroller.scroll_to(remaining, smooth=True, block=True)
+        self._pending_press_animation = True
 
   def _render(self, _):
     self._scroller.render(self._rect)
@@ -666,7 +708,7 @@ class Setup(Widget):
   def _push_network_setup(self, custom_software: bool = False):
     # self._network_setup_page.show_event()
     # TODO: move this to network setup page's show event and remove from Setup
-    self._network_monitor.reset()
+    # self._network_monitor.reset()
     # self._network_setup_page.set_has_internet(False)
     self._network_setup_page.set_custom_software(custom_software)  # to fire the correct continue callback after continuing
 
