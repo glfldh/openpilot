@@ -257,6 +257,24 @@ def compile_policy(cam_w, cam_h):
   print("pickle run validated")
 
   np.testing.assert_raises(AssertionError, np.testing.assert_array_equal, test_val[0], run_test(run_policy, seed=200)[0])
+
+  # test vs onnx
+  import onnxruntime as ort
+  ORT_TYPES = {'tensor(float)': np.float32, 'tensor(float16)': np.float16, 'tensor(uint8)': np.uint8}
+  def make_ort_runner(path):
+    sess = ort.InferenceSession(str(path))
+    out_name = sess.get_outputs()[0].name
+    in_dtypes = {x.name: ORT_TYPES[x.type] for x in sess.get_inputs()}
+    def run(inputs):
+      return {out_name: Tensor(sess.run([out_name], {k: v.numpy().astype(in_dtypes[k]) for k, v in inputs.items()})[0])}
+    return run
+  ort_run = _make_run_policy(make_ort_runner(MODELS_DIR / f'{MODEL_PREFIX}driving_vision.onnx'),
+                             make_ort_runner(MODELS_DIR / f'{MODEL_PREFIX}driving_policy.onnx'),
+                             cam_w, cam_h, model.vision_features_slice, model.frame_skip)
+  ort_val = run_test(lambda *args: tuple(o.realize() for o in ort_run(*args)))
+  np.testing.assert_allclose(test_val[0], ort_val[0], atol=1e-4, rtol=1e-4)
+  np.testing.assert_allclose(test_val[1], ort_val[1], atol=1e-4, rtol=1e-4)
+  print("test vs onnx passed")
   print("**** compile done ****")
 
 
