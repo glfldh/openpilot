@@ -87,7 +87,7 @@ class NetworkConnectivityMonitor:
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
           urllib.request.urlopen(request, timeout=1.0)
-          # time.sleep(2)
+          time.sleep(5)
           self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
             self.wifi_connected.set()
@@ -520,29 +520,28 @@ class BigPillButton(BigButton):
 
 
 class NetworkSetupPage(NavWidget):
-  def __init__(self, wifi_manager, network_monitor: NetworkConnectivityMonitor,
-               continue_callback: Callable, back_callback: Callable):
+  def __init__(self, network_monitor: NetworkConnectivityMonitor, continue_callback: Callable, back_callback: Callable):
     super().__init__()
-    self._wifi_manager = wifi_manager
+    self._wifi_manager = WifiManager()
+    self._wifi_manager.set_active(True)
     self._network_monitor = network_monitor
     self._custom_software = False
-    self._wifi_ui = WifiUIMici(wifi_manager)
+    self._prev_has_internet = False
+    self._wifi_ui = WifiUIMici(self._wifi_manager)
     self.set_back_callback(gui_app.pop_widget)
 
     self._connect_button = GreyBigButton("connect to\ninternet", "or swipe down to go back",
                                          gui_app.texture("icons_mici/setup/small_slider/slider_arrow.png", 64, 56, flip_x=True))
 
-    self._wifi_button = WifiNetworkButton(wifi_manager)
+    self._wifi_button = WifiNetworkButton(self._wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
 
+    self._pending_press_animation = False
     self._pending_shake = False
 
     def on_waiting_click():
-      # shake wifi button
-      offset = self._wifi_button.rect.x - ITEM_SPACING
-      # time_offset = 0.45 if offset < -150 else 0.0
-      self._scroller.scroll_to(offset, smooth=True)
-      # self._pending_shake = rl.get_time() + time_offset
+      offset = (self._wifi_button.rect.x + self._wifi_button.rect.width / 2) - (self._rect.x + self._rect.width / 2)
+      self._scroller.scroll_to(offset, smooth=True, block=True)
       self._pending_shake = True
 
     def on_continue_click():
@@ -562,6 +561,11 @@ class NetworkSetupPage(NavWidget):
       self._waiting_button,
     ])
 
+    # set up position for invisible items so that scroll_to works
+    self._scroller._layout()
+
+    gui_app.set_nav_stack_tick(self._nav_stack_tick)
+
   def set_custom_software(self, custom_software: bool):
     self._custom_software = custom_software
 
@@ -569,8 +573,28 @@ class NetworkSetupPage(NavWidget):
     super().show_event()
     self._scroller.show_event()
 
+  def _nav_stack_tick(self):
+    self._wifi_manager.process_callbacks()
+
+    has_internet = self._network_monitor.network_connected.is_set()
+    if has_internet and not self._prev_has_internet:
+      gui_app.pop_widgets_to(self)
+      end_offset = -(self._scroller.content_size - self._rect.width)
+      remaining = self._scroller.scroll_panel.get_offset() - end_offset
+      self._scroller.scroll_to(remaining, smooth=True, block=True)
+      self._pending_press_animation = True
+
+    self._prev_has_internet = has_internet
+
   def _update_state(self):
     super()._update_state()
+
+    if self._pending_press_animation:
+      btn_right = self._continue_button.rect.x + self._continue_button.rect.width
+      visible_right = self._rect.x + self._rect.width
+      if btn_right < visible_right + 50:
+        self._pending_press_animation = False
+        self._continue_button.trigger_press_animation()
 
     if self._pending_shake and abs(self._wifi_button.rect.x - ITEM_SPACING) < 50:
       self._pending_shake = False
@@ -599,18 +623,15 @@ class Setup(Widget):
     self.download_url = ""
     self.download_progress = 0
     self.download_thread = None
-    self._wifi_manager = WifiManager()
-    self._wifi_manager.set_active(True)
+
     self._network_monitor = NetworkConnectivityMonitor()
     self._network_monitor.start()
-    self._prev_has_internet = False
-    gui_app.set_nav_stack_tick(self._nav_stack_tick)
 
     self._start_page = StartPage()
     self._start_page.set_click_callback(lambda: self._set_state(SetupState.SOFTWARE_SELECTION))
     self._start_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._network_setup_page = NetworkSetupPage(self._wifi_manager, self._network_monitor, self._network_setup_continue_callback,
+    self._network_setup_page = NetworkSetupPage(self._network_monitor, self._network_setup_continue_callback,
                                                 self._network_setup_back_button_callback)
     # TODO: change these to touch_valid
     # self._network_setup_page.set_enabled(lambda: self.enabled)  # for nav stack
@@ -627,15 +648,9 @@ class Setup(Widget):
 
     self._downloading_page = DownloadingPage()
 
-  def _nav_stack_tick(self):
-    return
-    has_internet = self._network_monitor.network_connected.is_set()
-    if has_internet and not self._prev_has_internet:
-      gui_app.pop_widgets_to(self)
-    self._prev_has_internet = has_internet
-
   def _update_state(self):
-    self._wifi_manager.process_callbacks()
+    pass
+    # self._wifi_manager.process_callbacks()
 
     # self._network_setup_page.set_has_internet(self._network_monitor.network_connected.is_set())
     # self._network_setup_page.render(rect)

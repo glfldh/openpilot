@@ -79,6 +79,7 @@ class Scroller(Widget):
     self._reset_scroll_at_show = True
 
     self._scrolling_to: float | None = None
+    self._blocking_scroll: bool = False
     self._scroll_filter = FirstOrderFilter(0.0, SCROLL_RC, 1 / gui_app.target_fps)
     self._zoom_filter = FirstOrderFilter(1.0, 0.2, 1 / gui_app.target_fps)
     self._zoom_out_t: float = 0.0
@@ -115,7 +116,9 @@ class Scroller(Widget):
   def set_reset_scroll_at_show(self, scroll: bool):
     self._reset_scroll_at_show = scroll
 
-  def scroll_to(self, pos: float, smooth: bool = False):
+  def scroll_to(self, pos: float, smooth: bool = False, block: bool = False):
+    assert not block or smooth, "Non-smooth scroll cannot be blocking"
+
     # already there
     if abs(pos) < 1:
       return
@@ -124,6 +127,7 @@ class Scroller(Widget):
     scroll_offset = self.scroll_panel.get_offset() - pos
     if smooth:
       self._scrolling_to = scroll_offset
+      self._blocking_scroll = block
     else:
       self.scroll_panel.set_offset(scroll_offset)
 
@@ -160,8 +164,9 @@ class Scroller(Widget):
           else:
             self._zoom_filter.update(0.85)
 
-    # Cancel auto-scroll if user starts manually scrolling
-    if self._scrolling_to is not None and (self.scroll_panel.state == ScrollState.PRESSED or self.scroll_panel.state == ScrollState.MANUAL_SCROLL):
+    # Cancel auto-scroll if user starts manually scrolling (unless blocking)
+    if (self._scrolling_to is not None and not self._blocking_scroll
+        and self.scroll_panel.state in (ScrollState.PRESSED, ScrollState.MANUAL_SCROLL)):
       self._scrolling_to = None
 
     if self._scrolling_to is not None and len(self._pending_lift) == 0:
@@ -171,13 +176,14 @@ class Scroller(Widget):
       if abs(self._scroll_filter.x - self._scrolling_to) < 1:
         self.scroll_panel.set_offset(self._scrolling_to)
         self._scrolling_to = None
+        self._blocking_scroll = False
     else:
       # keep current scroll position up to date
       self._scroll_filter.x = self.scroll_panel.get_offset()
 
   def _get_scroll(self, visible_items: list[Widget], content_size: float) -> float:
     scroll_enabled = self._scroll_enabled() if callable(self._scroll_enabled) else self._scroll_enabled
-    self.scroll_panel.set_enabled(scroll_enabled and self.enabled)
+    self.scroll_panel.set_enabled(scroll_enabled and self.enabled and not self._blocking_scroll)
     self.scroll_panel.update(self._rect, content_size)
     if not self._snap_items:
       return round(self.scroll_panel.get_offset())
