@@ -189,7 +189,8 @@ def compile_dm_warp(cam_w, cam_h):
   warp_dm_jit = TinyJit(warp_dm, prune=True)
 
   for i in range(10):
-    inputs = [Tensor.from_blob((32 * Tensor.randn(yuv_size,) + 128).cast(dtype='uint8').realize().numpy().ctypes.data, (yuv_size,), dtype='uint8'),
+    frame_np = (32 * Tensor.randn(yuv_size,) + 128).cast(dtype='uint8').realize().numpy()
+    inputs = [Tensor.from_blob(frame_np.ctypes.data, (yuv_size,), dtype='uint8'),
               Tensor(Tensor.randn(3, 3).mul(8).realize().numpy(), device='NPY')]
     Device.default.synchronize()
     st = time.perf_counter()
