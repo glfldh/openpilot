@@ -622,7 +622,7 @@ class Setup(Widget):
     self._download_failed_page = FailedPage(HARDWARE.reboot, self._download_failed_startover_button_callback)
     self._download_failed_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    self._custom_software_warning_page = CustomSoftwareWarningPage(self._push_network_setup)
+    self._custom_software_warning_page = CustomSoftwareWarningPage(lambda: self._push_network_setup(True))
     # self._custom_software_warning_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._downloading_page = DownloadingPage()
