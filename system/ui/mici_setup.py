@@ -87,8 +87,8 @@ class NetworkConnectivityMonitor:
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
           urllib.request.urlopen(request, timeout=1.0)
-          # time.sleep(3)
-          # self.network_connected.set()
+          time.sleep(2)
+          self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
             self.wifi_connected.set()
         except Exception:
@@ -102,12 +102,9 @@ class NetworkConnectivityMonitor:
 
 class SetupState(IntEnum):
   START = 0
-  # NETWORK_SETUP = 1
-  # NETWORK_SETUP_CUSTOM_SOFTWARE = 2
-  SOFTWARE_SELECTION = 3
-  DOWNLOADING = 4
-  DOWNLOAD_FAILED = 5
-  # CUSTOM_SOFTWARE_WARNING = 6
+  SOFTWARE_SELECTION = 1
+  DOWNLOADING = 2
+  DOWNLOAD_FAILED = 3
 
 
 class StartPage(Widget):
@@ -494,8 +491,9 @@ class GreyBigButton(BigButton):
 
 
 class BigPillButton(BigButton):
-  def __init__(self, *args, **kwargs):
+  def __init__(self, *args, green: bool = False, **kwargs):
     # special button with new custom bg_txt. only big label, no icon. center h and v aligned label
+    self._green = green
     super().__init__(*args, **kwargs)
 
     self._label.set_font_size(48)
@@ -507,13 +505,17 @@ class BigPillButton(BigButton):
   #   return False
 
   def _render(self, _):
-    self.set_enabled(False)
+    # self.set_enabled(False)
     super()._render(_)
-    self.set_enabled(True)
+    # self.set_enabled(True)
 
   def _load_images(self):
-    self._txt_default_bg = gui_app.texture("icons_mici/setup/continue.png", 402, 180)
-    self._txt_pressed_bg = gui_app.texture("icons_mici/setup/continue_pressed.png", 402, 180)
+    if self._green:
+      self._txt_default_bg = gui_app.texture("icons_mici/setup/start_button.png", 402, 180)
+      self._txt_pressed_bg = gui_app.texture("icons_mici/setup/start_button_pressed.png", 402, 180)
+    else:
+      self._txt_default_bg = gui_app.texture("icons_mici/setup/continue.png", 402, 180)
+      self._txt_pressed_bg = gui_app.texture("icons_mici/setup/continue_pressed.png", 402, 180)
     self._txt_disabled_bg = gui_app.texture("icons_mici/setup/continue_disabled.png", 402, 180)
 
 
@@ -532,7 +534,6 @@ class NetworkSetupPage(NavWidget):
 
     self._wifi_button = WifiNetworkButton(wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
-    # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
 
     self._pending_shake = False
 
@@ -550,7 +551,7 @@ class NetworkSetupPage(NavWidget):
 
     self._waiting_button = BigPillButton("waiting for\ninternet...")
     self._waiting_button.set_click_callback(on_waiting_click)
-    self._continue_button = BigPillButton("continue")
+    self._continue_button = BigPillButton("continue", green=True)
     self._continue_button.set_click_callback(on_continue_click)
     self._continue_button.set_visible(False)
 
@@ -560,43 +561,6 @@ class NetworkSetupPage(NavWidget):
       self._continue_button,
       self._waiting_button,
     ])
-
-    # self._no_wifi_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_slash.png", 58, 50)
-    # self._wifi_full_txt = gui_app.texture("icons_mici/settings/network/wifi_strength_full.png", 58, 50)
-    # self._waiting_text = "waiting for internet..."
-    # self._network_header = TermsHeader(self._waiting_text, self._no_wifi_txt)
-    #
-    # back_txt = gui_app.texture("icons_mici/setup/back_new.png", 37, 32)
-    # self._back_button = SmallCircleIconButton(back_txt)
-    # self._back_button.set_click_callback(back_callback)
-    # self.set_back_callback(back_callback)
-    # self._back_button.set_enabled(lambda: self.enabled)  # for nav stack
-    #
-    # self._wifi_button = SmallerRoundedButton("wifi")
-    # self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
-    # self._wifi_button.set_enabled(lambda: self.enabled)
-    #
-    # self._continue_button = WidishRoundedButton("continue")
-    # self._continue_button.set_enabled(False)
-    #
-    # def _on_continue_click():
-    #   self._wifi_button.trigger_press_flash()
-    #   continue_callback()
-    #
-    # self._continue_button.set_click_callback(_on_continue_click)
-
-  # def set_has_internet(self, has_internet: bool):
-  #   print('HAS INTERNET', has_internet)
-  #   if has_internet:
-  #     # self._network_header.set_title("connected to internet")
-  #     # self._network_header.set_icon(self._wifi_full_txt)
-  #     self._continue_button.set_visible(True)
-  #     self._waiting_button.set_visible(False)
-  #   else:
-  #     # self._network_header.set_title(self._waiting_text)
-  #     # self._network_header.set_icon(self._no_wifi_txt)
-  #     self._continue_button.set_visible(False)
-  #     self._waiting_button.set_visible(True)
 
   def set_custom_software(self, custom_software: bool):
     self._custom_software = custom_software
@@ -624,37 +588,6 @@ class NetworkSetupPage(NavWidget):
 
   def _render(self, _):
     self._scroller.render(self._rect)
-    return
-
-    self._network_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + 16,
-      self._rect.width - 32,
-      self._network_header.rect.height,
-    ))
-
-    self._back_button.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._rect.y + self._rect.height - self._back_button.rect.height,
-      self._back_button.rect.width,
-      self._back_button.rect.height,
-    ))
-
-    self._wifi_button.render(rl.Rectangle(
-      self._rect.x + 8 + self._back_button.rect.width + 10,
-      self._rect.y + self._rect.height - self._wifi_button.rect.height,
-      self._wifi_button.rect.width,
-      self._wifi_button.rect.height,
-    ))
-
-    self._continue_button.render(rl.Rectangle(
-      self._rect.x + self._rect.width - self._continue_button.rect.width - 8,
-      self._rect.y + self._rect.height - self._continue_button.rect.height,
-      self._continue_button.rect.width,
-      self._continue_button.rect.height,
-    ))
-
-    return DialogResult.NO_ACTION
 
 
 class Setup(Widget):
@@ -674,7 +607,7 @@ class Setup(Widget):
     gui_app.set_nav_stack_tick(self._nav_stack_tick)
 
     self._start_page = StartPage()
-    self._start_page.set_click_callback(self._getting_started_button_callback)
+    self._start_page.set_click_callback(lambda: self._set_state(SetupState.SOFTWARE_SELECTION))
     self._start_page.set_enabled(lambda: self.enabled)  # for nav stack
 
     self._network_setup_page = NetworkSetupPage(self._wifi_manager, self._network_monitor, self._network_setup_continue_callback,
@@ -689,7 +622,6 @@ class Setup(Widget):
     self._download_failed_page = FailedPage(HARDWARE.reboot, self._download_failed_startover_button_callback)
     self._download_failed_page.set_enabled(lambda: self.enabled)  # for nav stack
 
-    # self._custom_software_warning_page = CustomSoftwareWarningPage(self._software_selection_custom_software_continue,
     self._custom_software_warning_page = CustomSoftwareWarningPage(self._push_network_setup)
     # self._custom_software_warning_page.set_enabled(lambda: self.enabled)  # for nav stack
 
@@ -713,25 +645,13 @@ class Setup(Widget):
     self.state = state
     if self.state == SetupState.SOFTWARE_SELECTION:
       self._software_selection_page.reset()
-    # elif self.state == SetupState.CUSTOM_SOFTWARE_WARNING:
-    #   self._software_selection_page.reset()
-    #   # self._custom_software_warning_page.reset()
-
-    # if self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
-    #   # self._network_setup_page.show_event()
-    #   self._network_monitor.reset()
-    #   print('SHOWING NETWORK SETUP PAGE')
-    #   # gui_app.set_modal_overlay(self._network_setup_page)
-    #   gui_app.push_widget(self._network_setup_page)
-    # # else:
-    # #   self._network_setup_page.hide_event()
 
   def _push_network_setup(self, custom_software: bool = False):
     # self._network_setup_page.show_event()
     # TODO: move this to network setup page's show event and remove from Setup
     self._network_monitor.reset()
     # self._network_setup_page.set_has_internet(False)
-    self._network_setup_page.set_custom_software(custom_software)
+    self._network_setup_page.set_custom_software(custom_software)  # to fire the correct continue callback after continuing
 
     print('SHOWING NETWORK SETUP PAGE')
     # gui_app.set_modal_overlay(self._network_setup_page)
@@ -743,33 +663,19 @@ class Setup(Widget):
     # print('state', repr(self.state))
     if self.state == SetupState.START:
       self._start_page.render(rect)
-    # elif self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE):
-    #   self.render_network_setup(rect)
     elif self.state == SetupState.SOFTWARE_SELECTION:
       self._software_selection_page.render(rect)
-    # elif self.state == SetupState.CUSTOM_SOFTWARE_WARNING:
-    #   self._custom_software_warning_page.render(rect)
     elif self.state == SetupState.DOWNLOADING:
       self.render_downloading(rect)
     elif self.state == SetupState.DOWNLOAD_FAILED:
       self._download_failed_page.render(rect)
-
-  def _custom_software_warning_back_button_callback(self):
-    self._set_state(SetupState.SOFTWARE_SELECTION)
-
-  def _getting_started_button_callback(self):
-    self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _software_selection_continue_button_callback(self):
     self.use_openpilot()
 
   def _software_selection_custom_software_button_callback(self):
     gui_app.push_widget(self._custom_software_warning_page)
-    self._software_selection_page.reset()
-    # self._set_state(SetupState.CUSTOM_SOFTWARE_WARNING)
-
-  def _software_selection_custom_software_continue(self):
-    self._set_state(SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE)
+    self._set_state(SetupState.SOFTWARE_SELECTION)
 
   def _download_failed_startover_button_callback(self):
     self._set_state(SetupState.START)
