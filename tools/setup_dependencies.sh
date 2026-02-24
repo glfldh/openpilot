@@ -45,8 +45,7 @@ function install_ubuntu_deps() {
     libssl-dev \
     libcurl4-openssl-dev \
     locales \
-    git \
-    xvfb
+    git
 
   $SUDO apt-get install -y --no-install-recommends \
     python3-dev \
@@ -54,6 +53,7 @@ function install_ubuntu_deps() {
     libjpeg-dev \
     libncurses5-dev \
     libzstd-dev \
+    libosmesa6 \
     gettext
 
   if [[ -d "/etc/udev/rules.d/" ]]; then

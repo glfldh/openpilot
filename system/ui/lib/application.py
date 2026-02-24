@@ -267,6 +267,14 @@ class GuiApplication:
       signal.signal(signal.SIGINT, _close)
       atexit.register(self.close)
 
+      # On Linux PC without any display, skip window creation to avoid a segfault.
+      # Comma devices (PC=False) use DRM/KMS directly, not X11/Wayland.
+      # When GLFW_PLATFORM=null is set, GLFW uses its headless null backend.
+      if PC and sys.platform == 'linux' and not os.getenv('DISPLAY') and not os.getenv('WAYLAND_DISPLAY') \
+          and os.getenv('GLFW_PLATFORM') != 'null':
+        cloudlog.warning("No display available. Rendering disabled.")
+        return
+
       flags = rl.ConfigFlags.FLAG_MSAA_4X_HINT
       if ENABLE_VSYNC:
         flags |= rl.ConfigFlags.FLAG_VSYNC_HINT
@@ -524,6 +532,9 @@ class GuiApplication:
     return self._last_mouse_event
 
   def render(self):
+    if not rl.is_window_ready():
+      return
+
     try:
       if self._profile_render_frames > 0:
         import cProfile
@@ -758,7 +769,11 @@ class GuiApplication:
     sys.exit(0)
 
   def _calculate_auto_scale(self) -> float:
-     # Create temporary window to query monitor info
+    # Skip monitor query when no display is available (headless CI)
+    if sys.platform == 'linux' and not os.getenv('DISPLAY') and not os.getenv('WAYLAND_DISPLAY'):
+      return 1.0
+
+    # Create temporary window to query monitor info
     rl.init_window(1, 1, "")
     w, h = rl.get_monitor_width(0), rl.get_monitor_height(0)
     rl.close_window()
