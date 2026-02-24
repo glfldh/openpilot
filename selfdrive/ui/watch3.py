@@ -62,8 +62,10 @@ if __name__ == "__main__":
       else:
         cam = (drivers[current_device], 'D')
         zoom = 1.0
+    elif rl.is_key_pressed(rl.KEY_EIGHT) or rl.is_key_pressed(rl.KEY_KP_8):
+      os.system("touch /tmp/kill_cameras")
     elif rl.is_key_pressed(rl.KEY_NINE) or rl.is_key_pressed(rl.KEY_KP_9):
-      os.system("touch /tmp/restart_cameras")
+      os.system("touch /tmp/start_cameras")
     if cam and (rl.is_key_pressed(rl.KEY_LEFT_SHIFT) or rl.is_key_pressed(rl.KEY_RIGHT_SHIFT) or rl.is_key_pressed(rl.KEY_KP_ADD)):
       zoom = 4.0 if zoom == 1.0 else 1.0
 
