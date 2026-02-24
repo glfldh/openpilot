@@ -116,7 +116,6 @@ class BigButton(Widget):
     self.set_icon(icon)
 
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
-    self._press_flash_until: float = 0.0
     self._shake_start: float | None = None
 
     self._rotate_icon_t: float | None = None
@@ -177,10 +176,6 @@ class BigButton(Widget):
   def get_text(self):
     return self.text
 
-  def trigger_press_flash(self, duration: float = 0.65):
-    """Briefly show the pressed state so the button appears to have been pressed."""
-    self._press_flash_until = rl.get_time() + duration
-
   def trigger_shake(self):
     self._shake_start = rl.get_time()
 
@@ -233,18 +228,14 @@ class BigButton(Widget):
       rl.draw_texture_pro(self._txt_icon, source_rec, dest_rec, origin, rotation, rl.Color(255, 255, 255, int(255 * 0.9)))
 
   def _render(self, _):
-    if self._press_flash_until > 0 and rl.get_time() >= self._press_flash_until:
-      self._press_flash_until = 0.0
-    show_pressed = self.is_pressed or (self._press_flash_until > 0 and rl.get_time() < self._press_flash_until)
-
     # draw _txt_default_bg
     txt_bg = self._txt_default_bg
     if not self.enabled:
       txt_bg = self._txt_disabled_bg
-    elif show_pressed:
+    elif self.is_pressed:
       txt_bg = self._txt_pressed_bg
 
-    scale = self._scale_filter.update(PRESSED_SCALE if show_pressed else 1.0)
+    scale = self._scale_filter.update(PRESSED_SCALE if self.is_pressed else 1.0)
     btn_x = self._rect.x + (self._rect.width * (1 - scale)) / 2
     btn_y = self._rect.y + (self._rect.height * (1 - scale)) / 2
 

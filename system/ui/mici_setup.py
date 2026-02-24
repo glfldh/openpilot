@@ -534,14 +534,15 @@ class NetworkSetupPage(NavWidget):
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
     # self._wifi_button.set_click_callback(lambda: self.set_state(NetworkSetupState.WIFI_PANEL))
 
-    self._pending_highlight: float | None = None
+    self._pending_shake = False
 
     def on_waiting_click():
-      # self._wifi_button.trigger_press_flash()
+      # shake wifi button
       offset = self._wifi_button.rect.x - ITEM_SPACING
-      print(offset)
+      # time_offset = 0.45 if offset < -150 else 0.0
       self._scroller.scroll_to(offset, smooth=True)
-      self._pending_highlight = rl.get_time() + np.interp(offset, [-300, 0], [0.45, 0.0])
+      # self._pending_shake = rl.get_time() + time_offset
+      self._pending_shake = True
 
     def on_continue_click():
       gui_app.pop_widget()
@@ -607,8 +608,8 @@ class NetworkSetupPage(NavWidget):
   def _update_state(self):
     super()._update_state()
 
-    if self._pending_highlight and rl.get_time() >= self._pending_highlight:
-      self._pending_highlight = None
+    if self._pending_shake and abs(self._wifi_button.rect.x - ITEM_SPACING) < 50:
+      self._pending_shake = False
       self._wifi_button.trigger_shake()
 
     if self._network_monitor.network_connected.is_set():
