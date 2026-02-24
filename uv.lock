@@ -959,7 +959,7 @@ provides-extras = ["docs", "testing", "dev", "tools"]
 [[package]]
 name = "openssl"
 version = "3.4.1"
-source = { git = "https://github.com/commaai/dependencies.git?subdirectory=openssl&rev=vendor-openssl#6adcf7f67da935843d80b0232fe61fd3a7f56c4a" }
+source = { git = "https://github.com/commaai/dependencies.git?subdirectory=openssl&rev=vendor-openssl#6aa4f4385689c4a342b10b15849922d8fe4a1df7" }
 
 [[package]]
 name = "packaging"
