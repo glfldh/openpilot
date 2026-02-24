@@ -589,7 +589,6 @@ class NetworkSetupPage(NavWidget):
 
     print('offset', self._scroller.scroll_panel.get_offset(), has_internet)
 
-
     if self._pending_has_internet_scroll is not None:
       elapsed = rl.get_time() - self._pending_has_internet_scroll
       if elapsed > 0.5:
