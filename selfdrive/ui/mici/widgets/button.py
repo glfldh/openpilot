@@ -118,7 +118,6 @@ class BigButton(Widget):
     self._scale_filter = BounceFilter(1.0, 0.1, 1 / gui_app.target_fps)
     self._shake_start: float | None = None
     self._press_animation_until: float | None = None
-    self.set_touch_valid_callback(lambda: self._press_animation_until is None)
 
     self._rotate_icon_t: float | None = None
 
@@ -143,6 +142,9 @@ class BigButton(Widget):
     self._txt_default_bg = gui_app.texture("icons_mici/buttons/button_rectangle.png", 402, 180)
     self._txt_pressed_bg = gui_app.texture("icons_mici/buttons/button_rectangle_pressed.png", 402, 180)
     self._txt_disabled_bg = gui_app.texture("icons_mici/buttons/button_rectangle_disabled.png", 402, 180)
+
+  def set_touch_valid_callback(self, touch_callback: Callable[[], bool]) -> None:
+    super().set_touch_valid_callback(lambda: touch_callback() and self._press_animation_until is None)
 
   def _width_hint(self) -> int:
     # Single line if scrolling, so hide behind icon if exists
