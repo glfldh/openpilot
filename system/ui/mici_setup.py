@@ -89,7 +89,7 @@ class NetworkConnectivityMonitor:
         try:
           request = urllib.request.Request(OPENPILOT_URL, method="HEAD")
           urllib.request.urlopen(request, timeout=1.0)
-          # time.sleep(3)
+          time.sleep(3)
           self.network_connected.set()
           if HARDWARE.get_network_type() == NetworkType.wifi:
             self.wifi_connected.set()
@@ -136,7 +136,7 @@ class SoftwareSelectionPage(Widget):
 
     self._openpilot_slider = LargerSlider("slide to install\nopenpilot", use_openpilot_callback)
     self._openpilot_slider.set_enabled(lambda: self.enabled)
-    self._custom_software_slider = LargerSlider("slide to install\ncustom software", use_custom_software_callback, green=False)
+    self._custom_software_slider = LargerSlider("slide to install\nother software", use_custom_software_callback, green=False)
     self._custom_software_slider.set_enabled(lambda: self.enabled)
 
   def reset(self):
@@ -326,11 +326,12 @@ class CustomSoftwareWarningPage(NavWidget):
     confirm_dialog = BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
                                              confirm_callback=continue_callback)
     self._continue_button = BigCircleButton("icons_mici/setup/driver_monitoring/dm_check.png")
-    self._continue_button.set_click_callback(lambda: gui_app.push_widget(confirm_dialog))
+    self._continue_button.set_click_callback(lambda: gui_app.push_widget(BigConfirmationDialogV2("I want to\ncontinue", "icons_mici/setup/driver_monitoring/dm_check.png",
+                                             confirm_callback=continue_callback)))
 
-    back_dialog = BigConfirmationDialogV2("nevermind\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)
+    back_dialog = BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)
     self._back_button = BigCircleButton("icons_mici/setup/cancel.png")
-    self._back_button.set_click_callback(lambda: gui_app.push_widget(back_dialog))
+    self._back_button.set_click_callback(lambda: gui_app.push_widget(BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=gui_app.pop_widget)))
 
     self._scroller = Scroller([
       GreyBigButton("use caution", "you are installing\n3rd party software",
@@ -510,6 +511,14 @@ class BigPillButton(BigButton):
     self._label.set_alignment(rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
     self._label.set_alignment_vertical(rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
 
+  def set_green(self, green: bool):
+    if self._green != green:
+      self._green = green
+      self._load_images()
+
+  def _update_label_layout(self):
+    pass
+
   # @property
   # def enabled(self):
   #   return False
@@ -556,12 +565,13 @@ class NetworkSetupPage(NavWidget):
       self._pending_shake = True
 
     def on_continue_click():
-      gui_app.pop_widget()
+      # if not self._custom_software:
+      #   gui_app.pop_widget()
       continue_callback(self._custom_software)
 
     self._waiting_button = BigPillButton("waiting for\ninternet...")
     self._waiting_button.set_click_callback(on_waiting_click)
-    self._continue_button = BigPillButton("continue", green=True)
+    self._continue_button = BigPillButton("install openpilot", green=True)
     self._continue_button.set_click_callback(on_continue_click)
 
     self._scroller = Scroller([
@@ -578,6 +588,14 @@ class NetworkSetupPage(NavWidget):
 
   def set_custom_software(self, custom_software: bool):
     self._custom_software = custom_software
+
+    # "download\n& install" if self._custom_software else "continue", green=not self._custom_software
+    # if self._custom_software:
+    #   self._continue_button.set_text("choose custom software")
+    # else:
+    #   self._continue_button.set_text("install\nopenpilot")
+    self._continue_button.set_text("install openpilot" if not custom_software else "choose software")
+    self._continue_button.set_green(not custom_software)
 
   def show_event(self):
     super().show_event()
@@ -605,8 +623,6 @@ class NetworkSetupPage(NavWidget):
 
   def _update_state(self):
     super()._update_state()
-
-
 
     if self._pending_press_animation:
       btn_right = self._continue_button.rect.x + self._continue_button.rect.width
@@ -781,6 +797,8 @@ class Setup(Widget):
       self._push_network_setup()
 
   def download(self, url: str):
+    gui_app.pop_widgets_to(self)
+
     # autocomplete incomplete URLs
     if re.match("^([^/.]+)/([^/]+)$", url):
       url = f"https://installer.comma.ai/{url}"
