@@ -229,7 +229,11 @@ def compile_policy(cam_w, cam_h):
     policy_output = outs[4].uop.base.buffer.numpy().flatten()
     t_pol = time.perf_counter()
     print(f"  [{i+1}/10] enqueue {(t_enqueue-st)*1e3:.1f} ms warp+vision+policy {(t_jit-st)*1e3:.1f} ms vision copy out {(t_vis-t_jit)*1e3:.1f} ms  policy copy out {(t_pol-t_vis)*1e3:.1f} ms  total {(t_pol-st)*1e3:.1f} ms")
+  return run_policy
 
+def test_vs_compile_vs_onnx(run_policy, cam_w, cam_h):
+  _, _, _, yuv_size = get_nv12_info(cam_w, cam_h)
+  model = ModelState()
   # test jit
   def run_test(fn, seed=100):
     m = ModelState() # re-instantiate model state to get empty buffers
@@ -247,10 +251,6 @@ def compile_policy(cam_w, cam_h):
   test_val = run_test(run_policy)
   np.testing.assert_equal(test_val, run_test(run_policy), "JIT run failed")
   print("jit run validated")
-
-  pkl_path = policy_pkl_path(cam_w, cam_h)
-  print(f"saving pkl to {pkl_path}")
-  with open(pkl_path, 'wb') as f: pickle.dump(run_policy, f)
 
   with open(pkl_path, 'rb') as f: pickle_loaded = pickle.load(f)
   np.testing.assert_equal(test_val, run_test(pickle_loaded), "pickle run failed")
@@ -581,7 +581,11 @@ if __name__ == "__main__":
   if args.compile:
     from openpilot.selfdrive.modeld.compile_warp import CAMERA_CONFIGS
     for cam_w, cam_h in CAMERA_CONFIGS:
-      compile_policy(cam_w, cam_h)
+      jit = compile_policy(cam_w, cam_h)
+      pkl_path = policy_pkl_path(cam_w, cam_h)
+      print(f"saving pkl to {pkl_path}")
+      with open(pkl_path, 'wb') as f: pickle.dump(jit, f)
+      # test_vs_compile_vs_onnx(jit, cam_w, cam_h)
   else:
     try:
       main(demo=args.demo)
