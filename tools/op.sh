@@ -123,34 +123,14 @@ function op_check_git() {
 function op_check_os() {
   echo "Checking for compatible os version..."
   if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-
     if [ -f "/etc/os-release" ]; then
       source /etc/os-release
-      local _supported=0
-      for _id in $ID $ID_LIKE; do
-        case "$_id" in
-          ubuntu|debian|linuxmint|pop|zorin|elementary|neon|\
-          fedora|rhel|centos|almalinux|rocky|\
-          arch|manjaro|endeavouros|cachyos|garuda|\
-          opensuse*|sles)
-            _supported=1
-            break
-            ;;
-        esac
-      done
-      if [[ $_supported -eq 1 ]]; then
-        echo -e " ↳ [${GREEN}✔${NC}] ${PRETTY_NAME:-$ID} detected."
-      else
-        echo -e " ↳ [${RED}✗${NC}] Unsupported distribution: ${PRETTY_NAME:-$ID}!"
-        loge "ERROR_INCOMPATIBLE_DISTRO" "${PRETTY_NAME:-$ID}"
-        return 1
-      fi
+      echo -e " ↳ [${GREEN}✔${NC}] ${PRETTY_NAME:-$ID} detected."
     else
-      echo -e " ↳ [${RED}✗${NC}] No /etc/os-release on your system. Make sure you're running a supported Linux distribution!"
+      echo -e " ↳ [${RED}✗${NC}] No /etc/os-release found. Make sure you're running a supported Linux distribution."
       loge "ERROR_UNKNOWN_DISTRO"
       return 1
     fi
-
   elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo -e " ↳ [${GREEN}✔${NC}] macOS detected."
   else

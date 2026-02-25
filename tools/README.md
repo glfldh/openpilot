@@ -2,12 +2,7 @@
 
 ## System Requirements
 
-
-
-openpilot needs git, a compiler, Python 3, .
-Our setup script should work on all mainstream Linux distros and macOS (Apple Silicon).
-
-Most of openpilot should work natively on macOS. On Windows you can use WSL for a nearly native Ubuntu experience. Running natively on any other system is not currently recommended and will likely require modifications.
+openpilot runs on Linux and macOS. On Windows you can use WSL for a nearly native Ubuntu experience.
 
 ## Native setup on Linux and macOS
 
@@ -40,6 +35,8 @@ scons -u
 [Windows Subsystem for Linux (WSL)](https://docs.microsoft.com/en-us/windows/wsl/about) should provide a similar experience to native Linux. [WSL 2](https://docs.microsoft.com/en-us/windows/wsl/compare-versions) specifically has been reported by several users to be a seamless experience.
 
 Follow [these instructions](https://docs.microsoft.com/en-us/windows/wsl/install) to setup the WSL and install the `Ubuntu-24.04` distribution. Once your Ubuntu WSL environment is setup, follow the Linux setup instructions to finish setting up your environment. See [these instructions](https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps) for running GUI apps.
+
+**NOTE**: If you are running WSL and any GUIs are failing (segfaulting or other strange issues) even after following the steps above, you may need to enable software rendering with `LIBGL_ALWAYS_SOFTWARE=1`, e.g. `LIBGL_ALWAYS_SOFTWARE=1 selfdrive/ui/ui`.
 
 ## CTF
 Learn about the openpilot ecosystem and tools by playing our [CTF](/tools/CTF.md).
