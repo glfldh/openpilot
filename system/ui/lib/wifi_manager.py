@@ -374,12 +374,7 @@ class WifiManager:
           self._handle_state_change(new_state, previous_state, change_reason)
 
   def _handle_state_change(self, new_state: int, prev_state: int, change_reason: int):
-    # TODO: known race conditions when switching networks (e.g. forget A, connect to B):
-    # 1. DEACTIVATING/DISCONNECTED + CONNECTION_REMOVED: fires before NewConnection for B
-    #    arrives, so _set_connecting(None) clears B's CONNECTING state causing UI flicker.
-    #    DEACTIVATING(CONNECTION_REMOVED): wifi_state (B, CONNECTING) -> (None, DISCONNECTED)
-    #    Fix: make DEACTIVATING a no-op, and guard DISCONNECTED with
-    #    `if wifi_state.ssid not in _connections` (NewConnection arrives between the two).
+    # TODO: known race condition when switching networks:
     # 2. PREPARE/CONFIG ssid lookup: DBus may return stale A's conn_path, overwriting B.
     #    PREPARE(0): wifi_state (B, CONNECTING) -> (A, CONNECTING)
     #    Fix: only do DBus lookup when wifi_state.ssid is None (auto-connections);
@@ -402,8 +397,11 @@ class WifiManager:
     #  Happens when network drops off after starting connection
 
     if new_state == NMDeviceState.DISCONNECTED:
-      if change_reason != NMDeviceStateReason.NEW_ACTIVATION:
-        # catches CONNECTION_REMOVED reason when connection is forgotten
+      if change_reason == NMDeviceStateReason.NEW_ACTIVATION:
+        pass
+      elif change_reason == NMDeviceStateReason.CONNECTION_REMOVED and self._wifi_state.ssid in self._connections:
+        pass  # forgetting a different network — keep current connecting/connected state
+      else:
         self._set_connecting(None)
 
     elif new_state in (NMDeviceState.PREPARE, NMDeviceState.CONFIG):
@@ -459,9 +457,7 @@ class WifiManager:
           cloudlog.warning(f"Failed to persist connection to disk: {save_reply}")
 
     elif new_state == NMDeviceState.DEACTIVATING:
-      if change_reason == NMDeviceStateReason.CONNECTION_REMOVED:
-        # When connection is forgotten
-        self._set_connecting(None)
+      pass  # DISCONNECTED always follows with the definitive state
 
   def _network_scanner(self):
     while not self._exit:
