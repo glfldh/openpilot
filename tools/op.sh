@@ -229,7 +229,7 @@ function op_setup() {
 
   echo "Pulling git lfs files..."
   st="$(date +%s)"
-  git lfs install
+  git lfs install --skip-smudge --skip-repo
   if ! git lfs pull; then
     echo -e " ↳ [${RED}✗${NC}] Pulling git lfs files failed!"
     loge "ERROR_GIT_LFS"
