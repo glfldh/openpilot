@@ -24,13 +24,10 @@ from openpilot.system.ui.widgets.keyboard import Keyboard
 
 # FIXME: known small leaks not worth worrying about at the moment
 KNOWN_LEAKS = {
-  "openpilot.selfdrive.ui.mici.onroad.driver_camera_dialog.DriverCameraView",
   "openpilot.selfdrive.ui.mici.layouts.onboarding.TermsPage",
   "openpilot.selfdrive.ui.mici.layouts.onboarding.TrainingGuide",
   "openpilot.selfdrive.ui.mici.layouts.onboarding.DeclinePage",
   "openpilot.selfdrive.ui.mici.layouts.onboarding.OnboardingWindow",
-  "openpilot.selfdrive.ui.onroad.driver_state.DriverStateRenderer",
-  "openpilot.selfdrive.ui.onroad.driver_camera_dialog.DriverCameraDialog",
   "openpilot.selfdrive.ui.layouts.onboarding.TermsPage",
   "openpilot.selfdrive.ui.layouts.onboarding.DeclinePage",
   "openpilot.selfdrive.ui.layouts.onboarding.OnboardingWindow",
