@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Cross-distro smoketest — runs openpilot setup+build+lint+test in Docker
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 COMPOSE_FILE="$(mktemp /tmp/smoketest-compose.XXXXXX.yml)"
-trap "rm -f $COMPOSE_FILE" EXIT
 
 cat > "$COMPOSE_FILE" <<YAML
 x-smoketest: &smoketest
@@ -33,12 +33,15 @@ x-smoketest: &smoketest
       MAX_EXAMPLES=1 pytest -x -m 'not slow' --deselect tools/replay/tests/test_replay
 
 services:
+  ubuntu-20.04:
+    <<: *smoketest
+    image: ubuntu:20.04
   ubuntu-24.04:
     <<: *smoketest
     image: ubuntu:24.04
   debian-12:
     <<: *smoketest
-    image: debian:12
+    image: debian:13
   fedora-41:
     <<: *smoketest
     image: fedora:41
@@ -48,17 +51,6 @@ services:
 YAML
 
 COMPOSE="docker compose -f $COMPOSE_FILE"
-
-case "${1:-}" in
-  --list)  $COMPOSE config --services; exit ;;
-  --clean) $COMPOSE down --rmi all --remove-orphans; exit ;;
-  --help|-h)
-    echo "Usage: tools/smoketest.sh [--clean] [--list] [distro...]"
-    echo "  --list     List available distros"
-    echo "  --clean    Remove containers and images"
-    echo "  distro...  Run only specific distros (default: all)"
-    exit ;;
-esac
 
 # Clean stale containers, then run
 $COMPOSE down --remove-orphans 2>/dev/null || true
