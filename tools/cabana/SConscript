@@ -1,54 +1,34 @@
-import subprocess
 import os
-import shutil
 
 Import('env', 'arch', 'common', 'messaging', 'visionipc', 'cereal')
-
-# Detect Qt - skip build if not available
-if arch == "Darwin":
-  brew_prefix = subprocess.check_output(['brew', '--prefix'], encoding='utf8').strip()
-  has_qt = os.path.isdir(os.path.join(brew_prefix, "opt/qt@5"))
-else:
-  has_qt = shutil.which('qmake') is not None
-
-if not has_qt:
-  Return()
+import qt5
 
 SConscript(['#tools/replay/SConscript'])
 Import('replay_lib')
 
 qt_env = env.Clone()
-qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "DBus", "Xml"]
+qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "Xml"]
 
-qt_libs = []
-if arch == "Darwin":
-  qt_env['QTDIR'] = f"{brew_prefix}/opt/qt@5"
-  qt_dirs = [
-    os.path.join(qt_env['QTDIR'], "include"),
-  ]
-  qt_dirs += [f"{qt_env['QTDIR']}/include/Qt{m}" for m in qt_modules]
-  qt_env["LINKFLAGS"] += ["-F" + os.path.join(qt_env['QTDIR'], "lib")]
-  qt_env["FRAMEWORKS"] += [f"Qt{m}" for m in qt_modules] + ["OpenGL"]
-  qt_env.AppendENVPath('PATH', os.path.join(qt_env['QTDIR'], "bin"))
-else:
-  qt_install_prefix = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_PREFIX'], encoding='utf8').strip()
-  qt_install_headers = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_HEADERS'], encoding='utf8').strip()
-
-  qt_env['QTDIR'] = qt_install_prefix
-  qt_dirs = [
-    f"{qt_install_headers}",
-  ]
-
-  qt_gui_path = os.path.join(qt_install_headers, "QtGui")
-  qt_gui_dirs = [d for d in os.listdir(qt_gui_path) if os.path.isdir(os.path.join(qt_gui_path, d))]
-  qt_dirs += [f"{qt_install_headers}/QtGui/{qt_gui_dirs[0]}/QtGui", ] if qt_gui_dirs else []
-  qt_dirs += [f"{qt_install_headers}/Qt{m}" for m in qt_modules]
-
-  qt_libs = [f"Qt5{m}" for m in qt_modules] + ["GL"]
-qt_env['QT3DIR'] = qt_env['QTDIR']
+# Use vendored Qt
+qt_env['QTDIR'] = qt5.DIR
+qt_env['QT3DIR'] = qt5.DIR
 qt_env.Tool('qt3')
 
+qt_dirs = [qt5.INCLUDE_DIR]
+qt_dirs += [f"{qt5.INCLUDE_DIR}/Qt{m}" for m in qt_modules]
+
+# QtGui private headers (for QOpenGLWidget internals)
+qt_gui_path = os.path.join(qt5.INCLUDE_DIR, "QtGui")
+if os.path.isdir(qt_gui_path):
+  qt_gui_dirs = [d for d in os.listdir(qt_gui_path) if os.path.isdir(os.path.join(qt_gui_path, d))]
+  if qt_gui_dirs:
+    qt_dirs.append(f"{qt5.INCLUDE_DIR}/QtGui/{qt_gui_dirs[0]}/QtGui")
+
 qt_env['CPPPATH'] += qt_dirs + ["#third_party/qrcode"]
+qt_env['LIBPATH'] += [qt5.LIB_DIR]
+qt_env['RPATH'] += [qt5.LIB_DIR]
+qt_env.AppendENVPath('PATH', qt5.BIN_DIR)
+
 qt_flags = [
   "-D_REENTRANT",
   "-DQT_NO_DEBUG",
@@ -58,18 +38,20 @@ qt_flags = [
   "-DQT_MESSAGELOGCONTEXT",
 ]
 qt_env['CXXFLAGS'] += qt_flags
-qt_env['LIBPATH'] += ['#selfdrive/ui', ]
+
+# Shared library linking (both platforms)
+qt_libs = [f"Qt5{m}" for m in qt_modules]
+qt_libs += ["Qt5Charts", "Qt5SerialBus"]
+
+if arch == "Darwin":
+  qt_env["FRAMEWORKS"] += ["OpenGL"]
+else:
+  qt_libs += ["GL"]
+
 qt_env['LIBS'] = qt_libs
 
 base_frameworks = qt_env['FRAMEWORKS']
 base_libs = [common, messaging, cereal, visionipc, 'm', 'ssl', 'crypto', 'pthread'] + qt_env["LIBS"]
-
-if arch == "Darwin":
-  base_frameworks.append('QtCharts')
-  base_frameworks.append('QtSerialBus')
-else:
-  base_libs.append('Qt5Charts')
-  base_libs.append('Qt5SerialBus')
 
 qt_libs = base_libs
 
@@ -78,6 +60,7 @@ cabana_env = qt_env.Clone()
 cabana_libs = [cereal, messaging, visionipc, replay_lib, 'avformat', 'avcodec', 'swresample', 'avutil', 'x264', 'z', 'zstd', 'curl', 'yuv', 'usb-1.0'] + qt_libs
 opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_env.Dir("../../opendbc/dbc").abspath)
 cabana_env['CXXFLAGS'] += [opendbc_path]
+cabana_env['CXXFLAGS'] += [f'-DVENDORED_QT_PLUGIN_PATH=\'"{qt5.PLUGINS_DIR}"\'']
 
 # build assets
 assets = "assets/assets.cc"

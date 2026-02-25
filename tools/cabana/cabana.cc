@@ -8,6 +8,8 @@
 #include "tools/cabana/streams/socketcanstream.h"
 
 int main(int argc, char *argv[]) {
+  // Set vendored Qt plugin path (platform plugins, xcb GL integrations)
+  QCoreApplication::addLibraryPath(VENDORED_QT_PLUGIN_PATH);
   QCoreApplication::setApplicationName("Cabana");
   QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
   initApp(argc, argv, false);

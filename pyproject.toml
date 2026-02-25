@@ -35,6 +35,7 @@ dependencies = [
   "zstd @ git+https://github.com/commaai/dependencies.git@releases#subdirectory=zstd",
   "ncurses @ git+https://github.com/commaai/dependencies.git@releases#subdirectory=ncurses",
   "zeromq @ git+https://github.com/commaai/dependencies.git@releases#subdirectory=zeromq",
+  "qt5 @ git+https://github.com/commaai/dependencies.git@releases#subdirectory=qt5",
   "git-lfs @ git+https://github.com/commaai/dependencies.git@releases#subdirectory=git-lfs",
 
   # body / webrtcd
