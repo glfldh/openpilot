@@ -126,19 +126,28 @@ function op_check_os() {
 
     if [ -f "/etc/os-release" ]; then
       source /etc/os-release
-      case "$VERSION_CODENAME" in
-        "jammy" | "kinetic" | "noble" | "focal")
-          echo -e " ↳ [${GREEN}✔${NC}] Ubuntu $VERSION_CODENAME detected."
-          ;;
-        * )
-          echo -e " ↳ [${RED}✗${NC}] Incompatible Ubuntu version $VERSION_CODENAME detected!"
-          loge "ERROR_INCOMPATIBLE_UBUNTU" "$VERSION_CODENAME"
-          return 1
-          ;;
-      esac
+      local _supported=0
+      for _id in $ID $ID_LIKE; do
+        case "$_id" in
+          ubuntu|debian|linuxmint|pop|zorin|elementary|neon|\
+          fedora|rhel|centos|almalinux|rocky|\
+          arch|manjaro|endeavouros|cachyos|garuda|\
+          opensuse*|sles)
+            _supported=1
+            break
+            ;;
+        esac
+      done
+      if [[ $_supported -eq 1 ]]; then
+        echo -e " ↳ [${GREEN}✔${NC}] ${PRETTY_NAME:-$ID} detected."
+      else
+        echo -e " ↳ [${RED}✗${NC}] Unsupported distribution: ${PRETTY_NAME:-$ID}!"
+        loge "ERROR_INCOMPATIBLE_DISTRO" "${PRETTY_NAME:-$ID}"
+        return 1
+      fi
     else
-      echo -e " ↳ [${RED}✗${NC}] No /etc/os-release on your system. Make sure you're running on Ubuntu, or similar!"
-      loge "ERROR_UNKNOWN_UBUNTU"
+      echo -e " ↳ [${RED}✗${NC}] No /etc/os-release on your system. Make sure you're running a supported Linux distribution!"
+      loge "ERROR_UNKNOWN_DISTRO"
       return 1
     fi
 
@@ -225,6 +234,7 @@ function op_setup() {
   et="$(date +%s)"
   echo -e " ↳ [${GREEN}✔${NC}] Dependencies installed successfully in $((et - st)) seconds."
 
+  # Activate venv so vendored tools (git-lfs, etc.) are on PATH
   op_activate_venv
 
   echo "Getting git submodules..."
