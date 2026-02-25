@@ -374,16 +374,12 @@ class WifiManager:
           self._handle_state_change(new_state, previous_state, change_reason)
 
   def _handle_state_change(self, new_state: int, prev_state: int, change_reason: int):
-    # TODO: known race conditions when switching networks (e.g. forget A, connect to B):
-    # 1. DEACTIVATING/DISCONNECTED + CONNECTION_REMOVED: fires before NewConnection for B
-    #    arrives, so _set_connecting(None) clears B's CONNECTING state causing UI flicker.
-    #    DEACTIVATING(CONNECTION_REMOVED): wifi_state (B, CONNECTING) -> (None, DISCONNECTED)
-    #    Fix: make DEACTIVATING a no-op, and guard DISCONNECTED with
-    #    `if wifi_state.ssid not in _connections` (NewConnection arrives between the two).
-    # 2. PREPARE/CONFIG ssid lookup: DBus may return stale A's conn_path, overwriting B.
-    #    PREPARE(0): wifi_state (B, CONNECTING) -> (A, CONNECTING)
-    #    Fix: only do DBus lookup when wifi_state.ssid is None (auto-connections);
-    #    user-initiated connections already have ssid set via _set_connecting.
+    # TODO: known race condition when switching networks (e.g. forget A, connect to B):
+    # DEACTIVATING/DISCONNECTED + CONNECTION_REMOVED: fires before NewConnection for B
+    # arrives, so _set_connecting(None) clears B's CONNECTING state causing UI flicker.
+    # DEACTIVATING(CONNECTION_REMOVED): wifi_state (B, CONNECTING) -> (None, DISCONNECTED)
+    # Fix: make DEACTIVATING a no-op, and guard DISCONNECTED with
+    # `if wifi_state.ssid not in _connections` (NewConnection arrives between the two).
 
     # TODO: Thread safety — _wifi_state is read/written by both the monitor thread (this
     # handler) and the main thread (_set_connecting via connect/activate). The GIL makes
@@ -407,14 +403,17 @@ class WifiManager:
         self._set_connecting(None)
 
     elif new_state in (NMDeviceState.PREPARE, NMDeviceState.CONFIG):
-      # Set connecting status when NetworkManager connects to known networks on its own
       wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
 
-      conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
-      if conn_path is None:
-        cloudlog.warning("Failed to get active wifi connection during PREPARE/CONFIG state")
-      else:
-        wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
+      # Only do DBus lookup for auto-connections (ssid=None). User-initiated
+      # connections already have ssid set via _set_connecting; looking it up
+      # here would overwrite with stale data from the previous connection.
+      if wifi_state.ssid is None:
+        conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
+        if conn_path is None:
+          cloudlog.warning("Failed to get active wifi connection during PREPARE/CONFIG state")
+        else:
+          wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
 
       self._wifi_state = wifi_state
 

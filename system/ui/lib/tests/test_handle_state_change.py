@@ -110,7 +110,6 @@ class TestDeactivating:
 
 
 class TestPrepareConfig:
-  @pytest.mark.xfail(reason="TODO: should skip DBus lookup when ssid already set")
   def test_user_initiated_skips_dbus_lookup(self, mocker):
     """User called _set_connecting('B') — PREPARE must not overwrite via DBus.
 
