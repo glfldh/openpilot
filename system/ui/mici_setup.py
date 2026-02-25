@@ -327,7 +327,7 @@ class CustomSoftwareWarningPage(NavWidget):
     self._continue_button.set_click_callback(show_confirm_dialog)
 
     def show_back_dialog():
-      gui_app.push_widget(BigConfirmationDialogV2("nevermind,\ngo back", "icons_mici/setup/cancel.png", confirm_callback=back_callback))
+      gui_app.push_widget(BigConfirmationDialogV2("I want to\ngo back", "icons_mici/setup/cancel.png", confirm_callback=back_callback))
 
     self._back_button = BigCircleButton("icons_mici/setup/cancel.png")
     self._back_button.set_click_callback(show_back_dialog)
