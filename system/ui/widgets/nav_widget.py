@@ -163,7 +163,7 @@ class NavWidget(Widget, abc.ABC):
     new_y = 0.0
 
     if not self.enabled:
-      self._back_button_start_pos = None
+      self._reset_swipe_state()
 
     # TODO: why is this not in handle_mouse_event? have to hack above
     if self._back_button_start_pos is not None:
