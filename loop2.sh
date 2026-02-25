@@ -64,7 +64,9 @@ while true; do
     echo "KILLING ADB SHELLS"
     for serial in "${!now[@]}"; do
       pkill -9 -f "adb -s $serial shell su - comma -c \"source /etc/profile && /data/camera.sh\""
-      sleep 0.1
+    done
+    sleep 0.5
+    for serial in "${!now[@]}"; do
       adb -s "$serial" shell 'pkill -9 -f camerad'
       adb -s "$serial" shell 'pkill -9 -f encoderd'
       adb -s "$serial" shell 'pkill -9 -f bridge'
