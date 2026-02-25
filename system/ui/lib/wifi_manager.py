@@ -370,8 +370,10 @@ class WifiManager:
         # Device state changes
         while len(state_q):
           new_state, previous_state, change_reason = state_q.popleft().body
+          print('  -> New state', (NMDeviceState(new_state).name, NMDeviceState(previous_state).name, NMDeviceStateReason(change_reason).name))
 
           self._handle_state_change(new_state, previous_state, change_reason)
+          print('  -> After WifiState', self._wifi_state)
 
   def _handle_state_change(self, new_state: int, prev_state: int, change_reason: int):
     # TODO: known race conditions when switching networks (e.g. forget A, connect to B):
@@ -402,8 +404,11 @@ class WifiManager:
     #  Happens when network drops off after starting connection
 
     if new_state == NMDeviceState.DISCONNECTED:
-      if change_reason != NMDeviceStateReason.NEW_ACTIVATION:
-        # catches CONNECTION_REMOVED reason when connection is forgotten
+      if change_reason == NMDeviceStateReason.NEW_ACTIVATION:
+        pass
+      elif change_reason == NMDeviceStateReason.CONNECTION_REMOVED and self._wifi_state.ssid in self._connections:
+        pass  # forgetting A while connecting to B — don't clear B
+      else:
         self._set_connecting(None)
 
     elif new_state in (NMDeviceState.PREPARE, NMDeviceState.CONFIG):
@@ -460,9 +465,7 @@ class WifiManager:
           cloudlog.warning(f"Failed to persist connection to disk: {save_reply}")
 
     elif new_state == NMDeviceState.DEACTIVATING:
-      if change_reason == NMDeviceStateReason.CONNECTION_REMOVED:
-        # When connection is forgotten
-        self._set_connecting(None)
+      pass
 
   def _network_scanner(self):
     while not self._exit:
