@@ -439,8 +439,10 @@ class WifiManager:
     elif new_state == NMDeviceState.ACTIVATED:
       # Note that IP address from Ip4Config may not be propagated immediately and could take until the next scan results
       wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTED)
+      t = time.monotonic()
 
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
+      print(f"Got active wifi connection in ACTIVATED state after {(time.monotonic() - t)*1000:.1f} ms: {conn_path}")
       if conn_path is None:
         cloudlog.warning("Failed to get active wifi connection during ACTIVATED state")
         self._wifi_state = wifi_state
