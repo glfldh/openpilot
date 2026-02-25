@@ -382,19 +382,6 @@ class WifiManager:
     # Fix: make DEACTIVATING a no-op, and guard DISCONNECTED with
     # `if wifi_state.ssid not in _connections` (NewConnection arrives between the two).
 
-    # TODO: Thread safety — _wifi_state is read/written by both the monitor thread (this
-    # handler) and the main thread (_set_connecting via connect/activate). The GIL makes
-    # individual assignments atomic, but read-then-write patterns can lose main thread writes:
-    #   PREPARE/CONFIG: reads _wifi_state, does slow DBus call, writes back — if
-    #   _set_connecting runs in between, the handler overwrites it with stale state.
-    #   This is both a deterministic bug (stale DBus data) and a thread race. The
-    #   deterministic fix (skip DBus lookup when ssid is set) also shrinks the race
-    #   window to near-zero since the read/write happen back-to-back under the GIL.
-    #   ACTIVATED: same read-then-write pattern with a DBus call in between.
-    # The deterministic fixes (skip DBus lookup when ssid set, prev_state guard) shrink
-    # the race windows significantly. If still visible, add a narrow lock around
-    # _wifi_state reads/writes (not around DBus calls, to avoid blocking the UI thread).
-
     # TODO: Handle (FAILED, SSID_NOT_FOUND) and emit for ui to show error
     #  Happens when network drops off after starting connection
 
@@ -404,18 +391,19 @@ class WifiManager:
         self._set_connecting(None)
 
     elif new_state in (NMDeviceState.PREPARE, NMDeviceState.CONFIG):
-      wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
-
-      # Only do DBus lookup for auto-connections (ssid=None). User-initiated
-      # connections already have ssid set via _set_connecting; looking it up
-      # here would overwrite with stale data from the previous connection.
-      if wifi_state.ssid is None:
+      # Do slow DBus lookup FIRST for auto-connections (ssid=None), then
+      # read+write _wifi_state after to avoid overwriting a concurrent _set_connecting.
+      conn_ssid = None
+      if self._wifi_state.ssid is None:
         conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
         if conn_path is None:
           cloudlog.warning("Failed to get active wifi connection during PREPARE/CONFIG state")
         else:
-          wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
+          conn_ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
 
+      wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
+      if wifi_state.ssid is None:
+        wifi_state.ssid = conn_ssid
       self._wifi_state = wifi_state
 
     # BAD PASSWORD
@@ -437,24 +425,30 @@ class WifiManager:
       pass
 
     elif new_state == NMDeviceState.ACTIVATED:
-      # Note that IP address from Ip4Config may not be propagated immediately and could take until the next scan results
-      wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTED)
-      t = time.monotonic()
-
+      # Do slow DBus call FIRST, then read _wifi_state after — avoids overwriting
+      # a concurrent _set_connecting that ran during the DBus call.
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
-      print(f"Got active wifi connection in ACTIVATED state after {(time.monotonic() - t)*1000:.1f} ms: {conn_path}")
-      if conn_path is None:
-        cloudlog.warning("Failed to get active wifi connection during ACTIVATED state")
-        self._wifi_state = wifi_state
-        self._enqueue_callbacks(self._activated)
-        self._update_networks()
+
+      activated_ssid = None
+      if conn_path is not None:
+        activated_ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
       else:
-        wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
+        cloudlog.warning("Failed to get active wifi connection during ACTIVATED state")
+
+      current = self._wifi_state
+      if current.ssid is not None and activated_ssid is not None and current.ssid != activated_ssid:
+        # _set_connecting changed the network during the DBus call — don't overwrite
+        pass
+      else:
+        wifi_state = replace(current, status=ConnectStatus.CONNECTED)
+        if wifi_state.ssid is None:
+          wifi_state.ssid = activated_ssid
         self._wifi_state = wifi_state
         self._enqueue_callbacks(self._activated)
         self._update_networks()
 
-        # Persist volatile connections (created by AddAndActivateConnection2) to disk
+      # Always persist volatile connections (created by AddAndActivateConnection2) to disk
+      if conn_path is not None:
         conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
         save_reply = self._conn_monitor.send_and_get_reply(new_method_call(conn_addr, 'Save'))
         if save_reply.header.message_type == MessageType.error:
