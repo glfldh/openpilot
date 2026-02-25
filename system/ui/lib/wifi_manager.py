@@ -370,8 +370,9 @@ class WifiManager:
         # Device state changes
         while len(state_q):
           new_state, previous_state, change_reason = state_q.popleft().body
-
+          cloudlog.warning(f'StateChanged: {NMDeviceState(new_state).name}({NMDeviceState(previous_state).name}, {NMDeviceStateReason(change_reason).name}) | before=({self._wifi_state.ssid}, {self._wifi_state.status.name})')
           self._handle_state_change(new_state, previous_state, change_reason)
+          cloudlog.warning(f'  after=({self._wifi_state.ssid}, {self._wifi_state.status.name})')
 
   def _handle_state_change(self, new_state: int, prev_state: int, change_reason: int):
     # TODO: known race condition when switching networks (e.g. forget A, connect to B):
@@ -594,6 +595,7 @@ class WifiManager:
     self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
 
   def connect_to_network(self, ssid: str, password: str, hidden: bool = False):
+    cloudlog.warning(f'connect_to_network: {ssid}')
     self._set_connecting(ssid)
 
     def worker():
@@ -660,6 +662,7 @@ class WifiManager:
       threading.Thread(target=worker, daemon=True).start()
 
   def activate_connection(self, ssid: str, block: bool = False):
+    cloudlog.warning(f'activate_connection: {ssid}')
     self._set_connecting(ssid)
 
     def worker():
