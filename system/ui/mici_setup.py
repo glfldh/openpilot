@@ -33,7 +33,7 @@ from openpilot.system.ui.widgets.scroller import Scroller, ITEM_SPACING
 from openpilot.system.ui.widgets.slider import LargerSlider, SmallSlider
 from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiNetworkButton, WifiUIMici
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigInputDialog
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, LABEL_HORIZONTAL_PADDING
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 
 from selfdrive.ui.mici.widgets.button import BigCircleButton
 from selfdrive.ui.mici.widgets.dialog import BigConfirmationDialogV2
@@ -336,10 +336,10 @@ class CustomSoftwareWarningPage(NavWidget):
       GreyBigButton("use caution", "you are installing\n3rd party software",
                     gui_app.texture("icons_mici/setup/warning.png", 64, 58), wide=True),
       GreyBigButton("", "• It has not been tested by comma.\n" +
-                    "• It may not comply with\n relevant safety standards.", wide=True),
+                    "• It may not comply with relevant safety standards.", wide=True),
       GreyBigButton("", "• It may cause damage to your device and/or vehicle.\n" +
                     "• You are fully responsible for your device.", wide=True),
-      GreyBigButton("how to restore to a\nfactory state later", "https://flash.comma.ai",
+      GreyBigButton("to restore to a\nfactory state later", "https://flash.comma.ai",
                     gui_app.texture("icons_mici/setup/restore.png", 64, 64), wide=True),
       self._continue_button,
       self._back_button,
@@ -361,9 +361,9 @@ class DownloadingPage(Widget):
   def __init__(self):
     super().__init__()
 
-    self._title_label = UnifiedLabel("downloading", 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+    self._title_label = UnifiedLabel("downloading...", 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                      font_weight=FontWeight.DISPLAY)
-    self._progress_label = UnifiedLabel("", 128, text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.35)),
+    self._progress_label = UnifiedLabel("", 128, text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)),
                                         font_weight=FontWeight.ROMAN, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
     self._progress = 0
 
@@ -373,15 +373,15 @@ class DownloadingPage(Widget):
 
   def _render(self, rect: rl.Rectangle):
     self._title_label.render(rl.Rectangle(
-      rect.x + 20,
-      rect.y + 10,
+      rect.x + 12,
+      rect.y + 0,
       rect.width,
       64,
     ))
 
     self._progress_label.render(rl.Rectangle(
-      rect.x + 20,
-      rect.y + 20,
+      rect.x + 12,
+      rect.y + 16,
       rect.width,
       rect.height,
     ))
@@ -441,6 +441,8 @@ class FailedPage(NavWidget):
 class GreyBigButton(BigButton):
   """Users should manage newlines with this class themselves"""
 
+  LABEL_HORIZONTAL_PADDING = 30
+
   def __init__(self, *args, wide: bool = False, **kwargs):
     super().__init__(*args, **kwargs)
     self.set_touch_valid_callback(lambda: False)
@@ -459,10 +461,10 @@ class GreyBigButton(BigButton):
     self._sub_label.set_font_weight(FontWeight.DISPLAY_REGULAR)
     self._sub_label.set_alignment_vertical(rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE if not self._label.text else
                                            rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
-    self._sub_label.set_line_height(0.9)
+    self._sub_label.set_line_height(0.95)
 
   def _width_hint(self) -> int:
-    return int(self._rect.width - LABEL_HORIZONTAL_PADDING)
+    return int(self._rect.width - self.LABEL_HORIZONTAL_PADDING * 2)
 
   def _render(self, _):
     rl.draw_rectangle_rounded(self._rect, 0.4, 10, rl.Color(255, 255, 255, int(255 * 0.15)))
