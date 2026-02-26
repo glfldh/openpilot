@@ -410,6 +410,7 @@ class WifiManager:
       # Set connecting status when NetworkManager connects to known networks on its own
       wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
 
+      time.sleep(0.1)
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
       if conn_path is None:
         cloudlog.warning("Failed to get active wifi connection during PREPARE/CONFIG state")
@@ -441,6 +442,7 @@ class WifiManager:
       # Note that IP address from Ip4Config may not be propagated immediately and could take until the next scan results
       wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTED)
 
+      time.sleep(0.1)
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
       if conn_path is None:
         cloudlog.warning("Failed to get active wifi connection during ACTIVATED state")
