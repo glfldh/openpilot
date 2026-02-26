@@ -3,6 +3,8 @@
 Tests the state machine in isolation by constructing a WifiManager with mocked
 DBus, then calling _handle_state_change directly with NM state transitions.
 """
+import threading
+
 import pytest
 from jeepney.low_level import MessageType
 from pytest_mock import MockerFixture
@@ -20,6 +22,7 @@ def _make_wm(mocker: MockerFixture, connections=None):
   wm._connections = dict(connections or {})
   wm._wifi_state = WifiState()
   wm._user_epoch = 0
+  wm._state_lock = threading.Lock()
   wm._callback_queue = []
   wm._need_auth = []
   wm._activated = []

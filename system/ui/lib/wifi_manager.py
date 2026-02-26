@@ -176,6 +176,7 @@ class WifiManager:
     self._connections: dict[str, str] = {}  # ssid -> connection path, updated via NM signals
     self._wifi_state: WifiState = WifiState()
     self._user_epoch: int = 0
+    self._state_lock = threading.Lock()
     self._ipv4_address: str = ""
     self._current_network_metered: MeteredType = MeteredType.UNKNOWN
     self._tethering_password: str = ""
@@ -227,7 +228,8 @@ class WifiManager:
         cloudlog.warning("No WiFi device found")
         return
 
-      epoch = self._user_epoch
+      with self._state_lock:
+        epoch = self._user_epoch
 
       dev_addr = DBusAddress(self._wifi_device, bus_name=NM, interface=NM_DEVICE_IFACE)
       dev_state = self._router_main.send_and_get_reply(Properties(dev_addr).get('State')).body[0][1]
@@ -242,10 +244,11 @@ class WifiManager:
       if conn_path:
         wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
 
-      if self._user_epoch != epoch:
-        return
+      with self._state_lock:
+        if self._user_epoch != epoch:
+          return
 
-      self._wifi_state = wifi_state
+        self._wifi_state = wifi_state
 
     if block:
       worker()
@@ -300,7 +303,12 @@ class WifiManager:
     return self._tethering_password
 
   def _set_connecting(self, ssid: str | None):
-    # Called by user action, or sequentially from state change handler
+    """Thread-safe: acquires _state_lock. Called from UI/worker threads."""
+    with self._state_lock:
+      self._bump_and_set(ssid)
+
+  def _bump_and_set(self, ssid: str | None):
+    """Must be called with _state_lock held."""
     self._user_epoch += 1
     self._wifi_state = WifiState(ssid=ssid, status=ConnectStatus.DISCONNECTED if ssid is None else ConnectStatus.CONNECTING)
 
@@ -386,53 +394,49 @@ class WifiManager:
 
   def _handle_state_change(self, new_state: int, prev_state: int, change_reason: int):
     # Thread safety: _wifi_state is read/written by both the monitor thread (this handler)
-    # and the main thread (_set_connecting via connect/activate). PREPARE/CONFIG and ACTIVATED
-    # have a read-then-write pattern with a slow DBus call in between — if _set_connecting
-    # runs mid-call, the handler would overwrite the user's newer state with stale data.
-    #
-    # The _user_epoch counter solves this without locks. _set_connecting increments the epoch
-    # on every user action. Handlers snapshot the epoch before their DBus call and compare
-    # after: if it changed, a user action occurred during the call and the stale result is
-    # discarded. Combined with deterministic fixes (skip DBus lookup when ssid already set,
-    # DEACTIVATING no-op, CONNECTION_REMOVED guard), all known race windows are closed.
+    # and the main thread (_set_connecting via connect/activate). _state_lock protects all
+    # read-check-write sequences. PREPARE/CONFIG and ACTIVATED have a slow DBus call in
+    # between — the lock is released during the call and _user_epoch bridges the gap:
+    # _set_connecting increments the epoch, handlers snapshot before and compare after,
+    # discarding stale results if a user action occurred mid-call.
 
     # TODO: Handle (FAILED, SSID_NOT_FOUND) and emit for UI to show error
     #  Happens when network drops off after starting connection
 
     if new_state == NMDeviceState.DISCONNECTED:
-      if change_reason == NMDeviceStateReason.NEW_ACTIVATION:
-        return
+      with self._state_lock:
+        if change_reason == NMDeviceStateReason.NEW_ACTIVATION:
+          return
 
-      # Guard: forget A while connecting to B fires CONNECTION_REMOVED. Don't clear B's state
-      # if B is still a known connection. If B hasn't arrived in _connections yet (late
-      # NewConnection), state clears here but PREPARE recovers via DBus lookup.
-      if (change_reason == NMDeviceStateReason.CONNECTION_REMOVED and self._wifi_state.ssid and
-        self._wifi_state.ssid in self._connections):
-        return
+        # Guard: forget A while connecting to B fires CONNECTION_REMOVED. Don't clear B's state
+        # if B is still a known connection. If B hasn't arrived in _connections yet (late
+        # NewConnection), state clears here but PREPARE recovers via DBus lookup.
+        if (change_reason == NMDeviceStateReason.CONNECTION_REMOVED and self._wifi_state.ssid and
+          self._wifi_state.ssid in self._connections):
+          return
 
-      self._set_connecting(None)
+        self._bump_and_set(None)
 
     elif new_state in (NMDeviceState.PREPARE, NMDeviceState.CONFIG):
-      epoch = self._user_epoch
-
-      if self._wifi_state.ssid is not None:
-        self._wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
-        return
-
-      # Auto-connection when NetworkManager connects to known networks on its own (ssid=None): look up ssid from NM
-      wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
+      with self._state_lock:
+        epoch = self._user_epoch
+        if self._wifi_state.ssid is not None:
+          self._wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
+          return
+        # Auto-connection when NetworkManager connects to known networks on its own (ssid=None): look up ssid from NM
+        wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTING)
 
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
 
-      if self._user_epoch != epoch:
-        return
+      with self._state_lock:
+        if self._user_epoch != epoch:
+          return
+        if conn_path is not None:
+          wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
+        self._wifi_state = wifi_state
 
       if conn_path is None:
         cloudlog.warning("Failed to get active wifi connection during PREPARE/CONFIG state")
-      else:
-        wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
-
-      self._wifi_state = wifi_state
 
     # BAD PASSWORD
     # - strong network rejects with NEED_AUTH+SUPPLICANT_DISCONNECT
@@ -445,9 +449,10 @@ class WifiManager:
       # prev_state guard: real auth failures come from CONFIG (supplicant handshake).
       # Stale NEED_AUTH from a prior connection during network switching arrives with
       # prev_state=DISCONNECTED and must be ignored to avoid a false wrong-password callback.
-      if self._wifi_state.ssid:
-        self._enqueue_callbacks(self._need_auth, self._wifi_state.ssid)
-        self._set_connecting(None)
+      with self._state_lock:
+        if self._wifi_state.ssid:
+          self._enqueue_callbacks(self._need_auth, self._wifi_state.ssid)
+          self._bump_and_set(None)
 
     elif new_state in (NMDeviceState.NEED_AUTH, NMDeviceState.IP_CONFIG, NMDeviceState.IP_CHECK,
                        NMDeviceState.SECONDARIES, NMDeviceState.FAILED):
@@ -455,20 +460,22 @@ class WifiManager:
 
     elif new_state == NMDeviceState.ACTIVATED:
       # Note that IP address from Ip4Config may not be propagated immediately and could take until the next scan results
-      epoch = self._user_epoch
-      wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTED)
+      with self._state_lock:
+        epoch = self._user_epoch
+        wifi_state = replace(self._wifi_state, status=ConnectStatus.CONNECTED)
 
       conn_path, _ = self._get_active_wifi_connection(self._conn_monitor)
 
-      if self._user_epoch != epoch:
-        return
+      with self._state_lock:
+        if self._user_epoch != epoch:
+          return
+        if conn_path is not None:
+          wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
+        self._wifi_state = wifi_state
 
       if conn_path is None:
         cloudlog.warning("Failed to get active wifi connection during ACTIVATED state")
-      else:
-        wifi_state.ssid = next((s for s, p in self._connections.items() if p == conn_path), None)
 
-      self._wifi_state = wifi_state
       self._enqueue_callbacks(self._activated)
       self._update_active_connection_info()
 
