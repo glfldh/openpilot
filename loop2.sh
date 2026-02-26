@@ -59,26 +59,22 @@ while true; do
     fi
   done
 
-  if [ -e "/tmp/kill_cameras" ]; then
-    rm -f "/tmp/kill_cameras"
+  if [[ -e "/tmp/restart_cameras" ]]; then
+    rm -f "/tmp/restart_cameras"
     echo "KILLING ADB SHELLS"
     for serial in "${!now[@]}"; do
       pkill -9 -f "adb -s $serial shell su - comma -c \"source /etc/profile && /data/camera.sh\""
     done
     sleep 0.5
+
     for serial in "${!now[@]}"; do
       adb -s "$serial" shell 'pkill -9 -f camerad'
       adb -s "$serial" shell 'pkill -9 -f encoderd'
       adb -s "$serial" shell 'pkill -9 -f bridge'
     done
-    touch "/tmp/killed_cameras"
-  fi
+    sleep 0.5
 
-
-  if [[ -e "/tmp/start_cameras" && -e "/tmp/killed_cameras" ]]; then
-    rm -f "/tmp/killed_cameras"
-    rm -f "/tmp/start_cameras"
-    echo "RESTARTING CAMERAS"
+    echo "STARTING CAMERAS"
     for serial in "${!now[@]}"; do
       on_device "$serial" &
     done
